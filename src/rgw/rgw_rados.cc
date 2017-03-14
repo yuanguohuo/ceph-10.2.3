@@ -3723,6 +3723,9 @@ int RGWRados::init_complete()
     run_sync_thread = false;
   }
 
+  //Yuanguo: RGWAsyncRadosProcessor is used to communicate with rados (osd cluster); you can put 
+  //requests (such as RGWAsyncGetSystemObj, RGWAsyncPutSystemObj, RGWAsyncPutSystemObjAttrs...) into 
+  //its queue, and these requests will be handled (sent to raods) asynchronousely.
   async_rados = new RGWAsyncRadosProcessor(this, cct->_conf->rgw_num_async_rados_threads);
   async_rados->start();
 
@@ -3920,6 +3923,9 @@ int RGWRados::open_root_pool_ctx()
 {
   const string& pool = get_zone_params().domain_root.name;
   const char *pool_str = pool.c_str();
+
+  ldout(cct, 99) << "YuanguoDbg: root pool: " << pool_str << dendl;
+
   librados::Rados *rad = get_rados_handle();
   int r = rad->ioctx_create(pool_str, root_pool_ctx);
   if (r == -ENOENT) {
@@ -3938,6 +3944,9 @@ int RGWRados::open_root_pool_ctx()
 int RGWRados::open_gc_pool_ctx()
 {
   const char *gc_pool = get_zone_params().gc_pool.name.c_str();
+
+  ldout(cct, 99) << "YuanguoDbg: gc pool: " << gc_pool << dendl;
+
   librados::Rados *rad = get_rados_handle();
   int r = rad->ioctx_create(gc_pool, gc_pool_ctx);
   if (r == -ENOENT) {
@@ -3956,6 +3965,9 @@ int RGWRados::open_gc_pool_ctx()
 int RGWRados::open_objexp_pool_ctx()
 {
   const char * const pool_name = get_zone_params().log_pool.name.c_str();
+
+  ldout(cct, 99) << "YuanguoDbg: objexp pool: " << pool_name << dendl;
+
   librados::Rados * const rad = get_rados_handle();
   int r = rad->ioctx_create(pool_name, objexp_pool_ctx);
   if (r == -ENOENT) {

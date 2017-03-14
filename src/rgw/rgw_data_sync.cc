@@ -1481,6 +1481,9 @@ void RGWRemoteDataLog::wakeup(int shard_id, set<string>& keys) {
 
 int RGWRemoteDataLog::run_sync(int num_shards, rgw_data_sync_status& sync_status)
 {
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRemoteDataLog::run_sync num_shards=" << num_shards << dendl;
+
+  //Yuanguo: read sth about source_zone from rados (osd cluster). 
   int r = run(new RGWReadDataSyncStatusCoroutine(&sync_env, &sync_status));
   if (r < 0 && r != -ENOENT) {
     ldout(store->ctx(), 0) << "ERROR: failed to read sync status from source_zone=" << sync_env.source_zone << " r=" << r << dendl;
