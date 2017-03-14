@@ -324,6 +324,18 @@ int main(int argc, const char **argv)
     apis_map[*li] = true;
   }
 
+  //Yuanguo:
+  //               + default_mgr = RGWRESTMgr_S3
+  //               |
+  //               |                 + /swift      => RGWRESTMgr_SWIFT
+  //   rest.mgr ---+                 | /swift_auth => RGWRESTMgr_SWIFT_Auth
+  //               |                 |
+  //               + resource_mgrs = +                                                  + /usage => RGWRESTMgr_Usage
+  //                                 |                                                  | /user  => RGWRESTMgr_User
+  //                                 + /admin      => RGWRESTMgr_Admin  resource_mgrs = + ...
+  //                                                                                    |
+  //                                                                                    + /realm => RGWRESTMgr_Realm
+
   // S3 website mode is a specialization of S3
   bool s3website_enabled = apis_map.count("s3website") > 0;
   if (apis_map.count("s3") > 0 || s3website_enabled)

@@ -1617,19 +1617,36 @@ RGWRESTMgr *RGWRESTMgr::get_resource_mgr(struct req_state *s, const string& uri,
 {
   *out_uri = uri;
 
+  //Yuanguo:
+  //               + default_mgr = RGWRESTMgr_S3
+  //               |
+  //               |                 + /swift      => RGWRESTMgr_SWIFT
+  //   rest.mgr ---+                 | /swift_auth => RGWRESTMgr_SWIFT_Auth
+  //               |                 |
+  //               + resource_mgrs = +                                                  + /usage => RGWRESTMgr_Usage
+  //                                 |                                                  | /user  => RGWRESTMgr_User
+  //                                 + /admin      => RGWRESTMgr_Admin  resource_mgrs = + ...
+  //                                                                                    |
+  //                                                                                    + /realm => RGWRESTMgr_Realm
+
   multimap<size_t, string>::reverse_iterator iter;
 
+  //Yuanguo: type of resources_by_size is multimap<size_t, string>. given that
+  //multimap is sorted, the iteration below is from longest to shortest and
+  //terminates as soon as matched.
   for (iter = resources_by_size.rbegin(); iter != resources_by_size.rend(); ++iter) {
+    //Yuanguo: e.g. we are get resource for "/admin/user/..."
     string& resource = iter->second;
     if (uri.compare(0, iter->first, resource) == 0 &&
 	(uri.size() == iter->first ||
-	 uri[iter->first] == '/')) {
-      string suffix = uri.substr(iter->first);
+	 uri[iter->first] == '/')) {  //Yuanguo: "/admin" is matched.
+      string suffix = uri.substr(iter->first);  //Yuanguo: suffix is "/user/..."
+      //Yuanguo: we have found RGWRESTMgr_Admin, then, find "/user" in it. 
       return resource_mgrs[resource]->get_resource_mgr(s, suffix, out_uri);
     }
   }
 
-  if (default_mgr)
+  if (default_mgr) //Yuanguo: didn't find a resource in this->resource_mgrs, return defaut if it has.
     return default_mgr;
 
   return this;

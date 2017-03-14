@@ -4086,6 +4086,9 @@ int RGWHandler_Auth_S3::init(RGWRados *store, struct req_state *state,
 RGWHandler_REST* RGWRESTMgr_S3::get_handler(struct req_state *s)
 {
   bool is_s3website = enable_s3website && (s->prot_flags & RGW_REST_WEBSITE);
+
+  ldout(s->cct, 99) << "YuanguoDbg: is_s3website=" << is_s3website << " s->prot_flags=" << s->prot_flags << " enable_s3website=" << enable_s3website << dendl;
+
   int ret =
     RGWHandler_REST_S3::init_from_header(s,
 					is_s3website ? RGW_FORMAT_HTML :

@@ -2404,6 +2404,11 @@ void RGWPutObj::execute()
     goto done;
   }
 
+  //Yuanguo: bucket_exists is already checked, see
+  //      process_request -->
+  //      handler->init_permissions -->
+  //      do_init_permissions -->
+  //      rgw_build_bucket_policies
   if (!s->bucket_exists) {
     op_ret = -ERR_NO_SUCH_BUCKET;
     return;
@@ -2454,6 +2459,7 @@ void RGWPutObj::execute()
   }
 
   processor = select_processor(*static_cast<RGWObjectCtx *>(s->obj_ctx), &multipart);
+  ldout(s->cct, 99) << "YuanguoDbg: processor=" << typeid(*handler).name() << " multipart=" << multipart << dendl;
 
   /* Handle object versioning of Swift API. */
   if (! multipart) {
@@ -2474,9 +2480,14 @@ void RGWPutObj::execute()
     goto done;
   }
 
+  ldout(s->cct, 99) << "YuanguoDbg: begin to get_data from client stream and put into rados" << dendl;
+
   do {
     bufferlist data_in;
     len = get_data(data_in);
+
+    ldout(s->cct, 99) << "YuanguoDbg: get_data from client, len=" << len << dendl;
+
     if (len < 0) {
       op_ret = len;
       goto done;
@@ -2502,6 +2513,8 @@ void RGWPutObj::execute()
       orig_data = data;
     }
 
+    ldout(s->cct, 99) << "YuanguoDbg: put into rados" << dendl;
+    
     op_ret = put_data_and_throttle(processor, data, ofs,
 				  (need_calc_md5 ? &hash : NULL), need_to_wait);
     if (op_ret < 0) {
@@ -2520,6 +2533,7 @@ void RGWPutObj::execute()
 
       dispose_processor(processor);
       processor = select_processor(*static_cast<RGWObjectCtx *>(s->obj_ctx), &multipart);
+      ldout(s->cct, 99) << "YuanguoDbg: processor=" << typeid(*handler).name() << " multipart=" << multipart << dendl;
 
       string oid_rand;
       char buf[33];
@@ -2540,6 +2554,9 @@ void RGWPutObj::execute()
     }
 
     ofs += len;
+
+    ldout(s->cct, 99) << "YuanguoDbg: ofs=" << ofs << " len=" << len << dendl;
+
   } while (len > 0);
 
   if (!chunked_upload &&
