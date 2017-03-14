@@ -1469,6 +1469,9 @@ int RGWDataChangesLog::get_log_shard_id(rgw_bucket& bucket, int shard_id) {
 }
 
 int RGWDataChangesLog::add_entry(rgw_bucket& bucket, int shard_id) {
+
+  ldout(cct, 99) << "YuanguoDbg: RGWDataChangesLog::add_entry, bucket=" << bucket << ", shard_id=" << shard_id << dendl;
+
   if (!store->need_to_log_data())
     return 0;
 
@@ -1491,6 +1494,9 @@ int RGWDataChangesLog::add_entry(rgw_bucket& bucket, int shard_id) {
   ldout(cct, 20) << "RGWDataChangesLog::add_entry() bucket.name=" << bucket.name << " shard_id=" << shard_id << " now=" << now << " cur_expiration=" << status->cur_expiration << dendl;
 
   if (now < status->cur_expiration) {
+
+    ldout(cct, 99) << "YuanguoDbg: RGWDataChangesLog::add_entry, no need to send" << dendl;
+
     /* no need to send, recently completed */
     status->lock->Unlock();
 
@@ -1510,6 +1516,9 @@ int RGWDataChangesLog::add_entry(rgw_bucket& bucket, int shard_id) {
 
     int ret = cond->wait();
     cond->put();
+
+    ldout(cct, 99) << "YuanguoDbg: RGWDataChangesLog::add_entry, ret=" << ret << dendl;
+
     if (!ret) {
       register_renew(bs);
     }

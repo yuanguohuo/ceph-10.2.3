@@ -2480,7 +2480,7 @@ void RGWPutObj::execute()
     goto done;
   }
 
-  ldout(s->cct, 99) << "YuanguoDbg: begin to get_data from client stream and put into rados" << dendl;
+  ldout(s->cct, 99) << "YuanguoDbg: begin to get_data from client stream and handle data" << dendl;
 
   do {
     bufferlist data_in;
@@ -2513,7 +2513,7 @@ void RGWPutObj::execute()
       orig_data = data;
     }
 
-    ldout(s->cct, 99) << "YuanguoDbg: put into rados" << dendl;
+    ldout(s->cct, 99) << "YuanguoDbg: handle data" << dendl;
     
     op_ret = put_data_and_throttle(processor, data, ofs,
 				  (need_calc_md5 ? &hash : NULL), need_to_wait);
@@ -2663,6 +2663,8 @@ void RGWPutObj::execute()
     ::encode("True", slo_userindicator_bl);
     emplace_attr(RGW_ATTR_SLO_UINDICATOR, std::move(slo_userindicator_bl));
   }
+
+  ldout(s->cct, 99) << "YuanguoDbg: RGWPutObj::execute, processor->complete" << dendl;
 
   op_ret = processor->complete(etag, &mtime, real_time(), attrs, delete_at,
 			      if_match, if_nomatch);

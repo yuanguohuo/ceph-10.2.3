@@ -2187,6 +2187,8 @@ RGWPutObjProcessor_Aio::~RGWPutObjProcessor_Aio()
 
 int RGWPutObjProcessor_Aio::handle_obj_data(rgw_obj& obj, bufferlist& bl, off_t ofs, off_t abs_ofs, void **phandle, bool exclusive)
 {
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWPutObjProcessor_Aio::handle_obj_data obj=" << obj << " ofs=" << ofs << " abs_ofs=" << abs_ofs << dendl;
+
   if ((uint64_t)abs_ofs + bl.length() > obj_len)
     obj_len = abs_ofs + bl.length();
 
@@ -2283,9 +2285,12 @@ int RGWPutObjProcessor_Aio::throttle_data(void *handle, const rgw_obj& obj, bool
 
 int RGWPutObjProcessor_Atomic::write_data(bufferlist& bl, off_t ofs, void **phandle, rgw_obj *pobj, bool exclusive)
 {
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWPutObjProcessor_Atomic::write_data ofs=" << ofs " next_part_ofs=" << next_part_ofs << dendl;
+
   if (ofs >= next_part_ofs) {
     int r = prepare_next_part(ofs);
     if (r < 0) {
+      ldout(store->ctx(), 99) << "YuanguoDbg: RGWPutObjProcessor_Atomic::write_data r=" << r << dendl;
       return r;
     }
   }
@@ -2297,6 +2302,8 @@ int RGWPutObjProcessor_Atomic::write_data(bufferlist& bl, off_t ofs, void **phan
 
 int RGWPutObjProcessor_Atomic::handle_data(bufferlist& bl, off_t ofs, MD5 *hash, void **phandle, rgw_obj *pobj, bool *again)
 {
+  ldout(store->ctx(), 99) << "YuanguoDbg: Enter RGWPutObjProcessor_Atomic::handle_data" << dendl;
+
   *again = false;
 
   *phandle = NULL;
@@ -2344,6 +2351,9 @@ int RGWPutObjProcessor_Atomic::handle_data(bufferlist& bl, off_t ofs, MD5 *hash,
   bool exclusive = (!write_ofs && immutable_head()); /* immutable head object, need to verify nothing exists there
                                                         we could be racing with another upload, to the same
                                                         object and cleanup can be messy */
+
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWPutObjProcessor_Atomic::handle_data, write_data" << dendl;
+
   int ret = write_data(bl, write_ofs, phandle, pobj, exclusive);
   if (ret >= 0) { /* we might return, need to clear bl as it was already sent */
     if (hash) {
@@ -2420,6 +2430,8 @@ int RGWPutObjProcessor_Atomic::complete_parts()
 
 int RGWPutObjProcessor_Atomic::complete_writing_data()
 {
+  ldout(store->ctx(), 99) << "YuanguoDbg: Enter RGWPutObjProcessor_Atomic::complete_writing_data" << dendl;
+
   if (!data_ofs && !immutable_head()) {
     /* only claim if pending_data_bl() is not empty. This is needed because we might be called twice
      * (e.g., when a retry due to race happens). So a second call to first_chunk.claim() would
@@ -2437,6 +2449,9 @@ int RGWPutObjProcessor_Atomic::complete_writing_data()
     if (max_write_size > pending_data_bl.length()) {
       max_write_size = pending_data_bl.length();
     }
+
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWPutObjProcessor_Atomic::complete_writing_data, next_part_ofs=" << next_part_ofs << " data_ofs=" << data_ofs << " max_chunk_size=" << max_chunk_size << " max_write_size=" << max_write_size << dendl;
+
     bufferlist bl;
     pending_data_bl.splice(0, max_write_size, &bl);
     int r = write_data(bl, data_ofs, &handle, &obj, false);
@@ -2475,6 +2490,14 @@ int RGWPutObjProcessor_Atomic::do_complete(string& etag, real_time *mtime, real_
                                            map<string, bufferlist>& attrs, real_time delete_at,
                                            const char *if_match,
                                            const char *if_nomatch) {
+
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWPutObjProcessor_Atomic::do_complete, etag=" << etag << " mtime=" << *mtime << " set_mtime=" << set_mtime << " delete_at=" << delete_at << " if_match=" << if_match << " if_nomatch=" << if_nomatch << dendl;
+
+  for(map<string, bufferlist>::const_iterator itrhyg=attrs.begin(); itrhyg!=attrs.end(); ++itrhyg)
+  {
+    ldout(s->cct, 99) << "YuanguoDbg: " << itrhyg->first.c_str() << " : " << itrhyg->second << dendl;
+  }
+
   int r = complete_writing_data();
   if (r < 0)
     return r;
@@ -4054,6 +4077,8 @@ void RGWRados::pick_control_oid(const string& key, string& notify_oid)
 
 int RGWRados::open_pool_ctx(const string& pool, librados::IoCtx&  io_ctx)
 {
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::open_pool_ctx, pool=" << pool.c_str() << dendl;
+
   librados::Rados *rad = get_rados_handle();
   int r = rad->ioctx_create(pool.c_str(), io_ctx);
   if (r != -ENOENT)
@@ -4101,6 +4126,7 @@ void RGWRados::build_bucket_index_marker(const string& shard_id_str, const strin
 
 int RGWRados::open_bucket_index_ctx(rgw_bucket& bucket, librados::IoCtx& index_ctx)
 {
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::open_bucket_index_ctx, bucket=" << bucket << dendl;
   int r = open_pool_ctx(bucket.index_pool, index_ctx);
   if (r < 0)
     return r;
@@ -4456,6 +4482,9 @@ void RGWRados::time_log_prepare_entry(cls_log_entry& entry, const real_time& ut,
 int RGWRados::time_log_add_init(librados::IoCtx& io_ctx)
 {
   const char *log_pool = get_zone_params().log_pool.name.c_str();
+
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::time_log_add_init, log_pool=" << log_pool << dendl;
+
   librados::Rados *rad = get_rados_handle();
   int r = rad->ioctx_create(log_pool, io_ctx);
   if (r == -ENOENT) {
@@ -4476,6 +4505,9 @@ int RGWRados::time_log_add_init(librados::IoCtx& io_ctx)
 
 int RGWRados::time_log_add(const string& oid, const real_time& ut, const string& section, const string& key, bufferlist& bl)
 {
+
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::time_log_add, oid=" << oid " ut=" << ut << " section=" << section << " key=" << key << " bl=" << bl << dendl;
+
   librados::IoCtx io_ctx;
 
   int r = time_log_add_init(io_ctx);
@@ -5730,6 +5762,8 @@ int RGWRados::BucketShard::init(rgw_bucket& _bucket, rgw_obj& obj)
   }
   ldout(store->ctx(), 20) << " bucket index object: " << bucket_obj << dendl;
 
+  ldout(store->ctx(), 99) << " YuanguoDbg: BucketShard::init bucket=" << bucket << " bucket_obj=" << bucket_obj << " shard_id=" << shard_id << dendl;
+
   return 0;
 }
 
@@ -5985,6 +6019,9 @@ int RGWRados::swift_versioning_restore(RGWObjectCtx& obj_ctx,
 int RGWRados::Object::Write::write_meta(uint64_t size,
                   map<string, bufferlist>& attrs)
 {
+
+  ldout(store->ctx(), 99) << "YuanguoDbg: Enter RGWRados::Object::Write::write_meta" << dendl;
+
   rgw_bucket bucket;
   rgw_rados_ref ref;
   RGWRados *store = target->get_store();
@@ -5996,20 +6033,26 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
   if (r < 0)
     return r;
 
+
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, before target->get_obj" << dendl;
   rgw_obj& obj = target->get_obj();
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, after target->get_obj" << dendl;
 
   if (obj.get_object().empty()) {
     ldout(store->ctx(), 0) << "ERROR: " << __func__ << "(): cannot write object with empty name" << dendl;
     return -EIO;
   }
 
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, before store->get_obj_ref" << dendl;
   r = store->get_obj_ref(obj, &ref, &bucket);
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, after store->get_obj_ref" << dendl;
   if (r < 0)
     return r;
 
   bool is_olh = state->is_olh;
 
   bool reset_obj = (meta.flags & PUT_OBJ_CREATE) != 0;
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, prepare atomic modification" << dendl;
   r = target->prepare_atomic_modification(op, reset_obj, meta.ptag, meta.if_match, meta.if_nomatch, false);
   if (r < 0)
     return r;
@@ -6019,6 +6062,7 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
   }
 
   if (state->is_olh) {
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, set xattr " << RGW_ATTR_OLH_ID_TAG << "=" << state->olh_tag << dendl;
     op.setxattr(RGW_ATTR_OLH_ID_TAG, state->olh_tag);
   }
 
@@ -6028,6 +6072,8 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
   if (meta.data) {
     /* if we want to overwrite the data, we also want to overwrite the
        xattrs, so just remove the object */
+
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, op write_full" << dendl;
     op.write_full(*meta.data);
   }
 
@@ -6039,6 +6085,7 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
   if (meta.rmattrs) {
     for (iter = meta.rmattrs->begin(); iter != meta.rmattrs->end(); ++iter) {
       const string& name = iter->first;
+      ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, rm xattr " << name.c_str() << dendl;
       op.rmxattr(name.c_str());
     }
   }
@@ -6051,6 +6098,8 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
 
     bufferlist bl;
     ::encode(*meta.manifest, bl);
+
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, set xattr " << RGW_ATTR_MANIFEST << "=" << bl << dendl;
     op.setxattr(RGW_ATTR_MANIFEST, bl);
   }
 
@@ -6061,6 +6110,7 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
     if (!bl.length())
       continue;
 
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, set xattr " << name.c_str() << "=" << bl << dendl;
     op.setxattr(name.c_str(), bl);
 
     if (name.compare(RGW_ATTR_ETAG) == 0) {
@@ -6072,17 +6122,22 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
     }
   }
   if (attrs.find(RGW_ATTR_PG_VER) == attrs.end()) {
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, cls_rgw_obj_store_pg_ver" << dendl;
     cls_rgw_obj_store_pg_ver(op, RGW_ATTR_PG_VER);
   }
 
   if (attrs.find(RGW_ATTR_SOURCE_ZONE) == attrs.end()) {
     bufferlist bl;
     ::encode(store->get_zone_short_id(), bl);
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, set xattr " << RGW_ATTR_SOURCE_ZONE << "=" << bl << dendl;
     op.setxattr(RGW_ATTR_SOURCE_ZONE, bl);
   }
 
   if (!op.size())
+  {
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, exit because op is empty" << dendl;
     return 0;
+  }
 
   string index_tag;
   uint64_t epoch;
@@ -6099,18 +6154,22 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
 
   RGWBucketInfo& bucket_info = target->get_bucket_info();
 
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, create Bucket::UpdateIndex" << dendl;
   RGWRados::Bucket bop(store, bucket_info);
   RGWRados::Bucket::UpdateIndex index_op(&bop, obj, state);
 
   if (versioned_op) {
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, Bucket::UpdateIndex set flag " << RGW_BILOG_FLAG_VERSIONED_OP << dendl;
     index_op.set_bilog_flags(RGW_BILOG_FLAG_VERSIONED_OP);
   }
 
 
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, Bucket::UpdateIndex prepare " << CLS_RGW_OP_ADD << dendl;
   r = index_op.prepare(CLS_RGW_OP_ADD);
   if (r < 0)
     return r;
 
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, operate op" << dendl;
   r = ref.ioctx.operate(ref.oid, &op);
   if (r < 0) { /* we can expect to get -ECANCELED if object was replaced under,
                 or -ENOENT if was removed, or -EEXIST if it did not exist
@@ -6121,11 +6180,13 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
   epoch = ref.ioctx.get_last_version();
   poolid = ref.ioctx.get_id();
 
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, target->complete_atomic_modification" << dendl;
   r = target->complete_atomic_modification();
   if (r < 0) {
     ldout(store->ctx(), 0) << "ERROR: complete_atomic_modification returned r=" << r << dendl;
   }
 
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, Bucket::UpdateIndex complete" << dendl;
   r = index_op.complete(poolid, epoch, size,
                         meta.set_mtime, etag, content_type, &acl_bl,
                         meta.category, meta.remove_objs);
@@ -6136,11 +6197,13 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
     *meta.mtime = meta.set_mtime;
   }
 
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, invalidate state" << dendl;
   /* note that index_op was using state so we couldn't invalidate it earlier */
   target->invalidate_state();
   state = NULL;
 
   if (versioned_op) {
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, set olh" << dendl;
     r = store->set_olh(target->get_ctx(), target->get_bucket_info(), obj, false, NULL, meta.olh_epoch, real_time(), false);
     if (r < 0) {
       return r;
@@ -6151,6 +6214,7 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
     rgw_obj_key obj_key;
     obj.get_index_key(&obj_key);
 
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, add object expire hint" << dendl;
     r = store->objexp_hint_add(meta.delete_at,
             bucket.tenant, bucket.name, bucket.bucket_id, obj_key);
     if (r < 0) {
@@ -6160,6 +6224,7 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
   }
   meta.canceled = false;
 
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, update quota stats" << dendl;
   /* update quota cache */
   store->quota_handler->update_stats(meta.owner, bucket, (orig_exists ? 0 : 1), size, orig_size);
 
@@ -6329,6 +6394,8 @@ int RGWRados::aio_put_obj_data(void *ctx, rgw_obj& obj, bufferlist& bl,
 			       off_t ofs, bool exclusive,
                                void **handle)
 {
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::aio_put_obj_data obj=" << obj << " ofs=" << ofs << dendl;
+
   rgw_rados_ref ref;
   rgw_bucket bucket;
   int r = get_obj_ref(obj, &ref, &bucket);
@@ -7423,6 +7490,9 @@ int RGWRados::open_bucket_index(rgw_bucket& bucket, librados::IoCtx& index_ctx, 
 
 int RGWRados::open_bucket_index_base(rgw_bucket& bucket, librados::IoCtx& index_ctx,
     string& bucket_oid_base) {
+
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::open_bucket_index_base, bucket=" << bucket << dendl;
+
   int r = open_bucket_index_ctx(bucket, index_ctx);
   if (r < 0)
     return r;
@@ -7480,6 +7550,9 @@ int RGWRados::open_bucket_index(rgw_bucket& bucket, librados::IoCtx& index_ctx,
 int RGWRados::open_bucket_index_shard(rgw_bucket& bucket, librados::IoCtx& index_ctx,
     const string& obj_key, string *bucket_obj, int *shard_id)
 {
+
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::open_bucket_index_shard, bucket=" << bucket << " obj_key=" << obj_key << dendl;
+
   string bucket_oid_base;
   int ret = open_bucket_index_base(bucket, index_ctx, bucket_oid_base);
   if (ret < 0)
@@ -7490,8 +7563,13 @@ int RGWRados::open_bucket_index_shard(rgw_bucket& bucket, librados::IoCtx& index
   // Get the bucket info
   RGWBucketInfo binfo;
   ret = get_bucket_instance_info(obj_ctx, bucket, binfo, NULL, NULL);
+
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::open_bucket_index_shard, binfo=[" << binfo.bucket << " " << binfo.owner << " " << binfo.flags << " " << binfo.zonegroup << " " << binfo.creation_time << " " << binfo.placement_rule << " " << binfo.has_instance_obj << " " << binfo.num_shards << " " << binfo.bucket_index_shard_hash_type << "]" << dendl;
+
   if (ret < 0)
     return ret;
+
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::open_bucket_index_shard, bucket=" << bucket << " bucket_oid_base=" << bucket_oid_base << " obj_key=" << obj_key << " num_shards=" << binfo.num_shards << " hash_type=" << (RGWBucketInfo::BIShardsHashType)binfo.bucket_index_shard_hash_type << dendl;
 
   ret = get_bucket_index_object(bucket_oid_base, obj_key, binfo.num_shards,
         (RGWBucketInfo::BIShardsHashType)binfo.bucket_index_shard_hash_type, bucket_obj, shard_id);
@@ -7668,13 +7746,17 @@ int RGWRados::Object::Delete::delete_obj()
       result.version_id = instance;
     }
 
+    ldout(store->ctx(), 99) << "Yuanguo: Object::Delete::delete_obj, get bucket shard" <<  << dendl;
     BucketShard *bs;
     int r = target->get_bucket_shard(&bs);
     if (r < 0) {
       ldout(store->ctx(), 5) << "failed to get BucketShard object: r=" << r << dendl;
       return r;
     }
+    ldout(store->ctx(), 99) << "YuanguoDbg: Object::Delete::delete_obj, bs->bucket=" << bs->bucket << " bs->shard_id=" << bs->shard_id << " bs->bucket_obj=" << bs->bucket_obj << dendl;
 
+
+    ldout(store->ctx(), 99) << "YuanguoDbg: Object::Delete::delete_obj, store->data_log->add_entry" << dendl;
     r = store->data_log->add_entry(bs->bucket, bs->shard_id);
     if (r < 0) {
       lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
@@ -8745,16 +8827,21 @@ int RGWRados::SystemObject::Read::stat(RGWObjVersionTracker *objv_tracker)
 
 int RGWRados::Bucket::UpdateIndex::prepare(RGWModifyOp op)
 {
+  ldout(store->ctx(), 99) << "YuanguoDbg: Bucket::UpdateIndex::prepare op=" << op << dendl;
+
   if (blind) {
     return 0;
   }
   RGWRados *store = target->get_store();
   BucketShard *bs;
+
+  ldout(store->ctx(), 99) << "YuanguoDbg: Bucket::UpdateIndex::prepare get bucket shard" << dendl;
   int ret = get_bucket_shard(&bs);
   if (ret < 0) {
     ldout(store->ctx(), 5) << "failed to get BucketShard object: ret=" << ret << dendl;
     return ret;
   }
+  ldout(store->ctx(), 99) << "YuanguoDbg: Bucket::UpdateIndex::prepare bs->bucket=" << bs->bucket << " bs->shard_id=" << bs->shard_id << " bs->bucket_obj=" << bs->bucket_obj << dendl;
 
   if (obj_state && obj_state->write_tag.length()) {
     optag = string(obj_state->write_tag.c_str(), obj_state->write_tag.length());
@@ -8763,6 +8850,8 @@ int RGWRados::Bucket::UpdateIndex::prepare(RGWModifyOp op)
       append_rand_alpha(store->ctx(), optag, optag, 32);
     }
   }
+
+  ldout(store->ctx(), 99) << "YuanguoDbg: Bucket::UpdateIndex::prepare, store->cls_obj_prepare_op" << dendl;
   ret = store->cls_obj_prepare_op(*bs, op, optag, obj, bilog_flags);
 
   return ret;
@@ -8772,16 +8861,21 @@ int RGWRados::Bucket::UpdateIndex::complete(int64_t poolid, uint64_t epoch, uint
                                     ceph::real_time& ut, string& etag, string& content_type, bufferlist *acl_bl, RGWObjCategory category,
                                     list<rgw_obj_key> *remove_objs)
 {
+  ldout(store->ctx(), 99) << "YuanguoDbg: Bucket::UpdateIndex::complete, poolid=" << poolid << " epoch=" << epoch << " size=" << size << " ut=" << ut << " etag=" << etag << " content_type=" << content_type << " category=" << category << dendl;
+
   if (blind) {
     return 0;
   }
   RGWRados *store = target->get_store();
   BucketShard *bs;
+
+  ldout(store->ctx(), 99) << "YuanguoDbg: Bucket::UpdateIndex::complete, get bucket shard" << dendl;
   int ret = get_bucket_shard(&bs);
   if (ret < 0) {
     ldout(store->ctx(), 5) << "failed to get BucketShard object: ret=" << ret << dendl;
     return ret;
   }
+  ldout(store->ctx(), 99) << "YuanguoDbg: Bucket::UpdateIndex::complete bs->bucket=" << bs->bucket << " bs->shard_id=" << bs->shard_id << " bs->bucket_obj=" << bs->bucket_obj << dendl;
 
   RGWObjEnt ent;
   obj.get_index_key(&ent.key);
@@ -8799,8 +8893,11 @@ int RGWRados::Bucket::UpdateIndex::complete(int64_t poolid, uint64_t epoch, uint
   ent.owner_display_name = owner.get_display_name();
   ent.content_type = content_type;
 
+
+  ldout(store->ctx(), 99) << "YuanguoDbg: Bucket::UpdateIndex::complete, store->cls_obj_complete_add" << dendl;
   ret = store->cls_obj_complete_add(*bs, optag, poolid, epoch, ent, category, remove_objs, bilog_flags);
 
+  ldout(store->ctx(), 99) << "YuanguoDbg: Bucket::UpdateIndex::complete, store->data_log->add_entry" << dendl;
   int r = store->data_log->add_entry(bs->bucket, bs->shard_id);
   if (r < 0) {
     lderr(store->ctx()) << "ERROR: failed writing data log" << dendl;
@@ -10509,6 +10606,8 @@ int RGWRados::get_bucket_instance_info(RGWObjectCtx& obj_ctx, const string& meta
 int RGWRados::get_bucket_instance_info(RGWObjectCtx& obj_ctx, rgw_bucket& bucket, RGWBucketInfo& info,
                                        real_time *pmtime, map<string, bufferlist> *pattrs)
 {
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::get_bucket_instance_info, bucket=" << bucket << dendl;
+
   string oid;
   if (bucket.oid.empty()) {
     get_bucket_meta_oid(bucket, oid);
@@ -11228,9 +11327,12 @@ int RGWRados::cls_rgw_init_index(librados::IoCtx& index_ctx, librados::ObjectWri
 int RGWRados::cls_obj_prepare_op(BucketShard& bs, RGWModifyOp op, string& tag,
                                  rgw_obj& obj, uint16_t bilog_flags)
 {
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_obj_prepare_op, bs.bucket=" << bs.bucket << " bs.shard_id=" << bs.shard_id << " bs.bucket_obj=" << bs.bucket_obj << " op=" << op << " tag=" << tag << " obj=" << obj << " bilog_flags=" << bilog_flags << dendl;
   ObjectWriteOperation o;
   cls_rgw_obj_key key(obj.get_index_key_name(), obj.get_instance());
   cls_rgw_bucket_prepare_op(o, op, tag, key, obj.get_loc(), get_zone().log_data, bilog_flags);
+
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_obj_prepare_op, bs.index_ctx.operate" << dendl;
   int r = bs.index_ctx.operate(bs.bucket_obj, &o);
   return r;
 }
@@ -11240,6 +11342,9 @@ int RGWRados::cls_obj_complete_op(BucketShard& bs, RGWModifyOp op, string& tag,
                                   RGWObjEnt& ent, RGWObjCategory category,
 				  list<rgw_obj_key> *remove_objs, uint16_t bilog_flags)
 {
+
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_obj_complete_op, bs.bucket=" << bs.bucket << " bs.shard_id=" << bs.shard_id << " bs.bucket_obj=" << bs.bucket_obj << " op=" << op << " tag=" << tag << " pool=" << pool << " epoch=" << epoch << dendl;
+
   list<cls_rgw_obj_key> *pro = NULL;
   list<cls_rgw_obj_key> ro;
 
@@ -11271,6 +11376,8 @@ int RGWRados::cls_obj_complete_op(BucketShard& bs, RGWModifyOp op, string& tag,
                              get_zone().log_data, bilog_flags);
 
   AioCompletion *c = librados::Rados::aio_create_completion(NULL, NULL, NULL);
+
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_obj_complete_op, bs.index_ctx.aio_operate" << dendl;
   int ret = bs.index_ctx.aio_operate(bs.bucket_obj, c, &o);
   c->release();
   return ret;
@@ -11281,6 +11388,7 @@ int RGWRados::cls_obj_complete_add(BucketShard& bs, string& tag,
                                    RGWObjEnt& ent, RGWObjCategory category,
                                    list<rgw_obj_key> *remove_objs, uint16_t bilog_flags)
 {
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_obj_complete_add, bs.bucket=" << bs.bucket << " bs.shard_id=" << bs.shard_id << " bs.bucket_obj=" << bs.bucket_obj << " tag=" << tag << " pool=" << pool << " epoch=" << epoch << dendl;
   return cls_obj_complete_op(bs, CLS_RGW_OP_ADD, tag, pool, epoch, ent, category, remove_objs, bilog_flags);
 }
 
