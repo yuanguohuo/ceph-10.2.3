@@ -6036,7 +6036,7 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
 
 
   rgw_obj& obj = target->get_obj();
-  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, obj=" < obj << dendl;
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, obj=" << obj << dendl;
 
   if (obj.get_object().empty()) {
     ldout(store->ctx(), 0) << "ERROR: " << __func__ << "(): cannot write object with empty name" << dendl;
