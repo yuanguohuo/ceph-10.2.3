@@ -2177,7 +2177,6 @@ public:
 
     int get_bucket_shard(BucketShard **pbs) {
       if (!bs_initialized) {
-        ldout(store->ctx(), 99) << "YuanguoDbg: Object::get_bucket_shard, not initialized yet" << dendl;
         int r = bs.init(bucket_info.bucket, obj);
         if (r < 0) {
           return r;
@@ -2185,9 +2184,6 @@ public:
         bs_initialized = true;
       }
       *pbs = &bs;
-
-      ldout(store->ctx(), 99) << "YuanguoDbg: Object::get_bucket_shard, bs.bucket=" << bs.bucket << " bs.shard_id=" << bs.shard_id << " bs.bucket_obj=" << bs.bucket_obj << dendl;
-
       return 0;
     }
 
@@ -2370,7 +2366,6 @@ public:
 
       int get_bucket_shard(BucketShard **pbs) {
         if (!bs_initialized) {
-          ldout(store->ctx(), 99) << "YuanguoDbg: Bucket::UpdateIndex::get_bucket_shard, not initialized yet" << dendl;
           int r = bs.init(target->get_bucket(), obj);
           if (r < 0) {
             return r;
@@ -2378,9 +2373,6 @@ public:
           bs_initialized = true;
         }
         *pbs = &bs;
-
-        ldout(store->ctx(), 99) << "YuanguoDbg: Bucket::UpdateIndex::get_bucket_shard, bs.bucket=" << bs.bucket << " bs.shard_id=" << bs.shard_id << " bs.bucket_obj=" << bs.bucket_obj << dendl;
-
         return 0;
       }
 
