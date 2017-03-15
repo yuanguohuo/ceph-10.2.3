@@ -640,6 +640,8 @@ static int read_key_entry(cls_method_context_t hctx, cls_rgw_obj_key& key, strin
 
 int rgw_bucket_prepare_op(cls_method_context_t hctx, bufferlist *in, bufferlist *out)
 {
+  CLS_LOG(1, "YuanguoDbg: Enter rgw_bucket_prepare_op\n");
+
   // decode request
   rgw_cls_obj_prepare_op op;
   bufferlist::iterator iter = in->begin();
@@ -666,6 +668,8 @@ int rgw_bucket_prepare_op(cls_method_context_t hctx, bufferlist *in, bufferlist 
   if (rc < 0 && rc != -ENOENT)
     return rc;
 
+  CLS_LOG(1, "YuanguoDbg: rgw_bucket_prepare_op, rc=%d idx=%s entry.key=[%s %s] entry.ver=[%ld %llu]\n", rc, idx.c_str(), entry.key.name.c_str(), entry.key.instance.c_str(), (long)entry.ver.pool, (unsigned long long)entry.ver.epoch);
+
   bool noent = (rc == -ENOENT);
 
   rc = 0;
@@ -691,7 +695,10 @@ int rgw_bucket_prepare_op(cls_method_context_t hctx, bufferlist *in, bufferlist 
     return rc;
   }
 
+  CLS_LOG(1, "YuanguoDbg: rgw_bucket_prepare_op, rc=%d header=[%llu %llu %llu %s]\n", rc, (unsigned long long)header.tag_timeout, (unsigned long long)header.ver, (unsigned long long)header.master_ver, header.max_marker.c_str());
+
   if (op.log_op) {
+    CLS_LOG(1, "YuanguoDbg: rgw_bucket_prepare_op, log_index_operation\n");
     rc = log_index_operation(hctx, op.key, op.op, op.tag, entry.meta.mtime,
                              entry.ver, info.state, header.ver, header.max_marker, op.bilog_flags, NULL, NULL);
     if (rc < 0)
@@ -701,10 +708,13 @@ int rgw_bucket_prepare_op(cls_method_context_t hctx, bufferlist *in, bufferlist 
   // write out new key to disk
   bufferlist info_bl;
   ::encode(entry, info_bl);
+
+  CLS_LOG(1, "YuanguoDbg: rgw_bucket_prepare_op, cls_cxx_map_set_val, idx=%s\n", idx.c_str());
   rc = cls_cxx_map_set_val(hctx, idx, &info_bl);
   if (rc < 0)
     return rc;
 
+  CLS_LOG(1, "YuanguoDbg: rgw_bucket_prepare_op, write_bucket_header\n");
   return write_bucket_header(hctx, &header);
 }
 
@@ -785,6 +795,8 @@ static int read_key_entry(cls_method_context_t hctx, cls_rgw_obj_key& key, strin
 
 int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist *out)
 {
+  CLS_LOG(1, "YuanguoDbg: Enter rgw_bucket_complete_op\n");
+  
   // decode request
   rgw_cls_obj_complete_op op;
   bufferlist::iterator iter = in->begin();
@@ -806,6 +818,8 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
     return -EINVAL;
   }
 
+  CLS_LOG(1, "YuanguoDbg: rgw_bucket_complete_op, rc=%d header=[%llu %llu %llu %s]\n", rc, (unsigned long long)header.tag_timeout, (unsigned long long)header.ver, (unsigned long long)header.master_ver, header.max_marker.c_str());
+
   struct rgw_bucket_dir_entry entry;
   bool ondisk = true;
 
@@ -820,6 +834,8 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
   } else if (rc < 0) {
     return rc;
   }
+
+  CLS_LOG(1, "YuanguoDbg: rgw_bucket_complete_op, rc=%d idx=%s entry.key=[%s %s] entry.ver=[%ld %llu]\n", rc, idx.c_str(), entry.key.name.c_str(), entry.key.instance.c_str(), (long)entry.ver.pool, (unsigned long long)entry.ver.epoch);
 
   entry.index_ver = header.ver;
   entry.flags = (entry.key.instance.empty() ? 0 : RGW_BUCKET_DIRENT_FLAG_VER); /* resetting entry flags, entry might have been previously a delete marker */
@@ -934,12 +950,14 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
     unaccount_entry(header, remove_entry);
 
     if (op.log_op) {
+      CLS_LOG(1, "YuanguoDbg: rgw_bucket_complete_op, log_index_operation\n");
       rc = log_index_operation(hctx, remove_key, CLS_RGW_OP_DEL, op.tag, remove_entry.meta.mtime,
                                remove_entry.ver, CLS_RGW_STATE_COMPLETE, header.ver, header.max_marker, op.bilog_flags, NULL, NULL);
       if (rc < 0)
         continue;
     }
 
+    CLS_LOG(1, "YuanguoDbg: rgw_bucket_complete_op, cls_cxx_map_remove_key\n");
     ret = cls_cxx_map_remove_key(hctx, k);
     if (ret < 0) {
       CLS_LOG(1, "rgw_bucket_complete_op(): cls_cxx_map_remove_key, failed to remove entry, name=%s instance=%s read_index_entry ret=%d\n", remove_key.name.c_str(), remove_key.instance.c_str(), rc);
@@ -947,6 +965,7 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
     }
   }
 
+  CLS_LOG(1, "YuanguoDbg: rgw_bucket_complete_op, write_bucket_header\n");
   return write_bucket_header(hctx, &header);
 }
 

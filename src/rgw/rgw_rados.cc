@@ -6044,7 +6044,7 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
   }
 
   r = store->get_obj_ref(obj, &ref, &bucket);
-  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, bucket=" << bucket << " ref=[" << ref.oid.c_str() << " " ref.key.c_str() << "]" << dendl;
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, bucket=" << bucket << " ref=[" << ref.oid.c_str() << " " << ref.key.c_str() << "]" << dendl;
   if (r < 0)
     return r;
 
