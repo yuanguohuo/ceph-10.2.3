@@ -153,12 +153,6 @@ static int ext_mime_map_init(CephContext *cct, const char *ext_map)
   buf[st.st_size] = '\0';
 
   parse_mime_map(buf);
-  
-  //Yuanguo: debug
-  for(map<string,string>::const_iterator itr=ext_mime_map.begin(); itr!=ext_mime_map.end(); ++itr)
-  {
-    ldout(cct, 99) << "YuanguoDbg: " << itr->first.c_str() << ":" << itr->second.c_str() << dendl;
-  }
 
   ret = 0;
 done:

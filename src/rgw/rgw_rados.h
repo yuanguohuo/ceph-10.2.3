@@ -2136,7 +2136,7 @@ public:
     rgw_bucket bucket;
     int shard_id;
     librados::IoCtx index_ctx;
-    string bucket_obj;
+    string bucket_obj;  //Yuanguo: such as .dir.081808e7-6858-48be-88e8-36d955fea611.4124.1
 
     explicit BucketShard(RGWRados *_store) : store(_store), shard_id(-1) {}
     int init(rgw_bucket& _bucket, rgw_obj& obj);

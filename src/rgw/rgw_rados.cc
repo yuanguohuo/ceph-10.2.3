@@ -2491,7 +2491,7 @@ int RGWPutObjProcessor_Atomic::do_complete(string& etag, real_time *mtime, real_
                                            const char *if_match,
                                            const char *if_nomatch) {
 
-  ldout(store->ctx(), 99) << "YuanguoDbg: RGWPutObjProcessor_Atomic::do_complete, etag=" << etag << " mtime=" << *mtime << " set_mtime=" << set_mtime << " delete_at=" << delete_at << " if_match=" << if_match << " if_nomatch=" << if_nomatch << dendl;
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWPutObjProcessor_Atomic::do_complete, etag=" << etag << " if_match=" << if_match << " if_nomatch=" << if_nomatch << dendl;
 
   for(map<string, bufferlist>::const_iterator itrhyg=attrs.begin(); itrhyg!=attrs.end(); ++itrhyg)
   {
@@ -4506,7 +4506,7 @@ int RGWRados::time_log_add_init(librados::IoCtx& io_ctx)
 int RGWRados::time_log_add(const string& oid, const real_time& ut, const string& section, const string& key, bufferlist& bl)
 {
 
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::time_log_add, oid=" << oid << " ut=" << ut << " section=" << section << " key=" << key << " bl=" << bl << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::time_log_add, oid=" << oid << " section=" << section << " key=" << key << " bl=" << bl << dendl;
 
   librados::IoCtx io_ctx;
 
@@ -6030,7 +6030,7 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
 
   RGWObjState *state;
   int r = target->get_state(&state, false);
-  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, r=" << r << " state->obj=" << state->obj << " state->exists=" << state->exists << " state->size" << state->size << " state->epoch" << state->epoch << " state->write_tag" << state->write_tag.c_str() << " state->data" << state->data << " state->zone_short_id" << state->zone_short_id << dendl;
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, r=" << r << " state->obj=" << state->obj << " state->exists=" << state->exists << " state->size=" << state->size << " state->epoch=" << state->epoch << " state->write_tag=" << state->write_tag.c_str() << " state->data=" << state->data << " state->zone_short_id=" << state->zone_short_id << dendl;
   if (r < 0)
     return r;
 
@@ -6044,7 +6044,7 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
   }
 
   r = store->get_obj_ref(obj, &ref, &bucket);
-  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, bucket=" << bucket << dendl;
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, bucket=" << bucket << " ref=[" << ref.oid.c_str() << " " ref.key.c_str() << "]" << dendl;
   if (r < 0)
     return r;
 
@@ -6168,7 +6168,7 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
   if (r < 0)
     return r;
 
-  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, operate op" << dendl;
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, before operate op, ref.oid=" << ref.oid.c_str() << dendl;
   r = ref.ioctx.operate(ref.oid, &op);
   ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, after operate op, r=" << r << dendl;
   if (r < 0) { /* we can expect to get -ECANCELED if object was replaced under,
@@ -7504,7 +7504,7 @@ int RGWRados::open_bucket_index_base(rgw_bucket& bucket, librados::IoCtx& index_
 
   bucket_oid_base = dir_oid_prefix;
   bucket_oid_base.append(bucket.marker);
-
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::open_bucket_index_base, bucket_oid_base=" << bucket_oid_base.c_str() << dendl;
   return 0;
 
 }
@@ -7564,7 +7564,7 @@ int RGWRados::open_bucket_index_shard(rgw_bucket& bucket, librados::IoCtx& index
   RGWBucketInfo binfo;
   ret = get_bucket_instance_info(obj_ctx, bucket, binfo, NULL, NULL);
 
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::open_bucket_index_shard, binfo=[" << binfo.bucket << " " << binfo.owner << " " << binfo.flags << " " << binfo.zonegroup << " " << binfo.creation_time << " " << binfo.placement_rule << " " << binfo.has_instance_obj << " " << binfo.num_shards << " " << binfo.bucket_index_shard_hash_type << "]" << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::open_bucket_index_shard, binfo=[" << binfo.bucket << " " << binfo.owner << " " << binfo.flags << " " << binfo.zonegroup << " " << binfo.placement_rule << " " << binfo.has_instance_obj << " " << binfo.num_shards << " " << binfo.bucket_index_shard_hash_type << "]" << dendl;
 
   if (ret < 0)
     return ret;
@@ -8866,7 +8866,7 @@ int RGWRados::Bucket::UpdateIndex::complete(int64_t poolid, uint64_t epoch, uint
   RGWRados *store = target->get_store();
   BucketShard *bs;
 
-  ldout(store->ctx(), 99) << "YuanguoDbg: Bucket::UpdateIndex::complete, poolid=" << poolid << " epoch=" << epoch << " size=" << size << " ut=" << ut << " etag=" << etag << " content_type=" << content_type << " category=" << category << dendl;
+  ldout(store->ctx(), 99) << "YuanguoDbg: Bucket::UpdateIndex::complete, poolid=" << poolid << " epoch=" << epoch << " size=" << size << " etag=" << etag << " content_type=" << content_type << " category=" << category << dendl;
 
   int ret = get_bucket_shard(&bs);
   if (ret < 0) {
