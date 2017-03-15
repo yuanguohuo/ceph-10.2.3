@@ -2459,7 +2459,7 @@ void RGWPutObj::execute()
   }
 
   processor = select_processor(*static_cast<RGWObjectCtx *>(s->obj_ctx), &multipart);
-  ldout(s->cct, 99) << "YuanguoDbg: processor=" << typeid(*handler).name() << " multipart=" << multipart << dendl;
+  ldout(s->cct, 99) << "YuanguoDbg: processor=" << typeid(*processor).name() << " multipart=" << multipart << dendl;
 
   /* Handle object versioning of Swift API. */
   if (! multipart) {
@@ -2533,7 +2533,7 @@ void RGWPutObj::execute()
 
       dispose_processor(processor);
       processor = select_processor(*static_cast<RGWObjectCtx *>(s->obj_ctx), &multipart);
-      ldout(s->cct, 99) << "YuanguoDbg: processor=" << typeid(*handler).name() << " multipart=" << multipart << dendl;
+      ldout(s->cct, 99) << "YuanguoDbg: processor=" << typeid(*processor).name() << " multipart=" << multipart << dendl;
 
       string oid_rand;
       char buf[33];
