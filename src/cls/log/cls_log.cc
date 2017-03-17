@@ -31,6 +31,8 @@ static string log_index_prefix = "1_";
 
 static int write_log_entry(cls_method_context_t hctx, string& index, cls_log_entry& entry)
 {
+  CLS_LOG(1, "YuanguoDbg: write_log_entry, index=%s entry=[%s, %s, %s]\n", index.c_str(), entry.id.c_str(), entry.section.c_str(), entry.name.c_str());
+
   bufferlist bl;
   ::encode(entry, bl);
 
@@ -97,6 +99,8 @@ static void get_index(cls_method_context_t hctx, utime_t& ts, string& index)
 
 static int cls_log_add(cls_method_context_t hctx, bufferlist *in, bufferlist *out)
 {
+  CLS_LOG(1, "YuanguoDbg: Enter cls_log_add\n");
+
   bufferlist::iterator in_iter = in->begin();
 
   cls_log_add_op op;
@@ -107,15 +111,25 @@ static int cls_log_add(cls_method_context_t hctx, bufferlist *in, bufferlist *ou
     return -EINVAL;
   }
 
+  CLS_LOG(1, "YuanguoDbg: cls_log_add, op.monotonic_inc=%d\n", (int)op.monotonic_inc);
+  for(list<cls_log_entry>::const_iterator itr=op.entries.begin(); itr!=op.entries.end(); ++itr)
+  {
+    CLS_LOG(1, "YuanguoDbg: cls_log_add, cls_log_entry: [%s, %s, %s]\n", itr->id.c_str(), itr->section.c_str(), itr->name.c_str());
+  }
+
   cls_log_header header;
 
   int ret = read_header(hctx, header);
   if (ret < 0)
     return ret;
 
+  CLS_LOG(1, "YuanguoDbg: cls_log_add, ret=%d, header.max_marker=%s\n", ret, header.max_marker.c_str());
+
   for (list<cls_log_entry>::iterator iter = op.entries.begin();
        iter != op.entries.end(); ++iter) {
     cls_log_entry& entry = *iter;
+
+    CLS_LOG(1, "YuanguoDbg: cls_log_add, for cls_log_entry: [%s, %s, %s]\n", entry.id.c_str(), entry.section.c_str(), entry.name.c_str());
 
     string index;
 
@@ -134,15 +148,20 @@ static int cls_log_add(cls_method_context_t hctx, bufferlist *in, bufferlist *ou
 
     CLS_LOG(0, "storing entry at %s", index.c_str());
 
-
     if (index > header.max_marker)
       header.max_marker = index;
 
+    //Yuanguo: set omap key-value pair which can be listed by:
+    //   # rados listomapkeys data_log.3  -p zone_master_hyg.rgw.log
+    //   1_1489653363.684562_381.1
     ret = write_log_entry(hctx, index, entry);
     if (ret < 0)
       return ret;
   }
 
+  CLS_LOG(1, "YuanguoDbg: cls_log_add, write_header, header.max_marker=%s\n", ret, header.max_marker.c_str());
+  //Yuanguo: set omap header which can be read by:
+  //    # rados getomapheader data_log.3 ttt -p zone_master_hyg.rgw.log
   ret = write_header(hctx, header);
   if (ret < 0)
     return ret;

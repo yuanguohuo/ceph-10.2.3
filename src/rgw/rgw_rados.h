@@ -2136,7 +2136,29 @@ public:
     rgw_bucket bucket;
     int shard_id;
     librados::IoCtx index_ctx;
-    string bucket_obj;  //Yuanguo: such as .dir.081808e7-6858-48be-88e8-36d955fea611.4124.1
+
+    //Yuanguo: bucket_obj looks like .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.3
+    //     it's the oid of the bucket-shard-instance.  bucket-shard-instance
+    //     is stored in pool: {zone}.rgw.buckets.index. For example:
+    //
+    //            # rados ls  -p zone_master_hyg.rgw.buckets.index   | sort
+    //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.0    ---------------------
+    //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.1             |
+    //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.2             |
+    //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.3      8 shards of bucketX whose marker is 5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1
+    //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.4             |
+    //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.5             |
+    //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.6             |
+    //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.7    ---------------------
+    //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2.0    ---------------------
+    //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2.1             |
+    //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2.2             |
+    //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2.3      8 shards of bucketY whose marker is 5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2
+    //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2.4             |
+    //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2.5             |
+    //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2.6             |
+    //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2.7    ---------------------
+    string bucket_obj;   
 
     explicit BucketShard(RGWRados *_store) : store(_store), shard_id(-1) {}
     int init(rgw_bucket& _bucket, rgw_obj& obj);

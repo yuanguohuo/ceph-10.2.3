@@ -541,6 +541,8 @@ int cls_cxx_map_get_val(cls_method_context_t hctx, const string &key,
 int cls_cxx_map_set_val(cls_method_context_t hctx, const string &key,
 			bufferlist *inbl)
 {
+  CLS_LOG(1, "YuanguoDbg: cls_cxx_map_set_val, key=%s\n", key.c_str());
+
   ReplicatedPG::OpContext **pctx = (ReplicatedPG::OpContext **)hctx;
   vector<OSDOp> ops(1);
   OSDOp& op = ops[0];

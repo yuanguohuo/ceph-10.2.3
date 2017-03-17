@@ -682,7 +682,9 @@ struct rgw_bucket {
   std::string marker;
   std::string bucket_id;
 
-  std::string oid; /*
+  //Yuanguo: oid of the bucket instance, looks like: .bucket.meta.testbuck:5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1   
+  //         the bucket instance obj is stored in pool: {zone}.rgw.data.root
+  std::string oid; /*  
                     * runtime in-memory only info. If not empty, points to the bucket instance object
                     */
 

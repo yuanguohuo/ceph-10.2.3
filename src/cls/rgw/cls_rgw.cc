@@ -145,6 +145,9 @@ static int log_index_operation(cls_method_context_t hctx, cls_rgw_obj_key& obj_k
                                rgw_bucket_entry_ver& ver, RGWPendingState state, uint64_t index_ver,
                                string& max_marker, uint16_t bilog_flags, string *owner, string *owner_display_name)
 {
+  CLS_LOG(1, "YuanguoDbg: Enter log_index_operation, obj_key=[%s %s] op=%d, tag=%s ver=[%ld %llu] state=%d index_ver=%llu max_marker=%s bilog_flags=%u\n",
+      obj_key.name.c_str(), obj_key.instance.c_str(), op, tag.c_str(), (long)ver.pool, (unsigned long long)ver.epoch, state, (unsigned long long)index_ver, max_marker.c_str(), (unsigned)bilog_flags);
+
   bufferlist bl;
 
   struct rgw_bi_log_entry entry;
@@ -173,6 +176,7 @@ static int log_index_operation(cls_method_context_t hctx, cls_rgw_obj_key& obj_k
   if (entry.id > max_marker)
     max_marker = entry.id;
 
+  CLS_LOG(1, "YuanguoDbg: log_index_operation, key=%s\n", key.c_str());
   return cls_cxx_map_set_val(hctx, key, &bl);
 }
 
@@ -564,6 +568,14 @@ int rgw_bucket_check_index(cls_method_context_t hctx, bufferlist *in, bufferlist
 
 static int write_bucket_header(cls_method_context_t hctx, struct rgw_bucket_dir_header *header)
 {
+  CLS_LOG(1, "YuanguoDbg: write_bucket_header, header=[%llu %llu %llu %s]\n", (unsigned long long)header->tag_timeout, (unsigned long long)header->ver, (unsigned long long)header->master_ver, header->max_marker.c_str());
+  for(map<uint8_t, rgw_bucket_category_stats>::const_iterator itr=header->stats.begin(); itr!=header->stats.end(); ++itr)
+  {
+    CLS_LOG(1, "YuanguoDbg: write_bucket_header, %u => rgw_bucket_category_stats[%llu %llu %llu]\n", 
+        (unsigned)itr->first, 
+        (unsigned long long)itr->second.total_size, (unsigned long long)itr->second.total_size_rounded, (unsigned long long)itr->second.num_entries);
+  }
+
   header->ver++;
 
   bufferlist header_bl;
@@ -686,6 +698,8 @@ int rgw_bucket_prepare_op(cls_method_context_t hctx, bufferlist *in, bufferlist 
   info.timestamp = real_clock::now();
   info.state = CLS_RGW_STATE_PENDING_MODIFY;
   info.op = op.op;
+
+  CLS_LOG(1, "YuanguoDbg: rgw_bucket_complete_op, insert pending, op.tag=%s\n", op.tag.c_str());
   entry.pending_map.insert(pair<string, rgw_bucket_pending_info>(op.tag, info));
 
   struct rgw_bucket_dir_header header;
@@ -699,6 +713,10 @@ int rgw_bucket_prepare_op(cls_method_context_t hctx, bufferlist *in, bufferlist 
 
   if (op.log_op) {
     CLS_LOG(1, "YuanguoDbg: rgw_bucket_prepare_op, log_index_operation\n");
+    //Yuanguo: #rados listomapkeys .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.3  -p zone_master_hyg.rgw.buckets.index
+    //         OBJ_AAA
+    //         {0x80}0_00000000001.2.2    <--- log_index_operation set this omap;
+    //         {0x80}0_00000000002.3.3
     rc = log_index_operation(hctx, op.key, op.op, op.tag, entry.meta.mtime,
                              entry.ver, info.state, header.ver, header.max_marker, op.bilog_flags, NULL, NULL);
     if (rc < 0)
@@ -710,11 +728,18 @@ int rgw_bucket_prepare_op(cls_method_context_t hctx, bufferlist *in, bufferlist 
   ::encode(entry, info_bl);
 
   CLS_LOG(1, "YuanguoDbg: rgw_bucket_prepare_op, cls_cxx_map_set_val, idx=%s\n", idx.c_str());
+  //Yuanguo: #rados listomapkeys .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.3  -p zone_master_hyg.rgw.buckets.index
+  //         OBJ_AAA   <---  cls_cxx_map_set_val set this omap;
+  //         {0x80}0_00000000001.2.2    
+  //         {0x80}0_00000000002.3.3
   rc = cls_cxx_map_set_val(hctx, idx, &info_bl);
   if (rc < 0)
     return rc;
 
   CLS_LOG(1, "YuanguoDbg: rgw_bucket_prepare_op, write_bucket_header\n");
+  //Yuanguo: write the omap header. the omap header can be viewed by:
+  //         # rados getomapheader .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.3 hfile -p zone_master_hyg.rgw.buckets.index
+  //         but hfile is unreadable, it's the encoded format of header (struct rgw_bucket_dir_header)
   return write_bucket_header(hctx, &header);
 }
 
@@ -812,6 +837,7 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
           op.tag.c_str());
 
   struct rgw_bucket_dir_header header;
+  //Yuanguo: header.ver has been increased in rgw_bucket_prepare_op-->write_bucket_header
   int rc = read_bucket_header(hctx, &header);
   if (rc < 0) {
     CLS_LOG(1, "ERROR: rgw_bucket_complete_op(): failed to read header\n");
@@ -824,6 +850,8 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
   bool ondisk = true;
 
   string idx;
+  //Yuanguo: in rgw_bucket_prepare_op, read_key_entry returned ENOENT. And in
+  //that function, the key-entry was created, so here, we can read it;
   rc = read_key_entry(hctx, op.key, &idx, &entry);
   if (rc == -ENOENT) {
     entry.key = op.key;
@@ -846,6 +874,8 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
       CLS_LOG(1, "ERROR: couldn't find tag for pending operation\n");
       return -EINVAL;
     }
+    //Yuanguo: pending was inserted in rgw_bucket_prepare_op().
+    CLS_LOG(1, "YuanguoDbg: rgw_bucket_complete_op, erase pending, pinter->first=%s\n", pinter->first.c_str());
     entry.pending_map.erase(pinter);
   }
 
@@ -917,6 +947,12 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
       stats.total_size_rounded += get_rounded_size(meta.accounted_size);
       bufferlist new_key_bl;
       ::encode(entry, new_key_bl);
+
+      CLS_LOG(1, "YuanguoDbg: rgw_bucket_complete_op, cls_cxx_map_set_val, idx=%s\n", idx.c_str());
+      //Yuanguo: #rados listomapkeys .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.3  -p zone_master_hyg.rgw.buckets.index
+      //         OBJ_AAA   <---  this was set in rgw_bucket_prepare_op, change its value here (e.g. entry.exists=true)
+      //         {0x80}0_00000000001.2.2    
+      //         {0x80}0_00000000002.3.3
       int ret = cls_cxx_map_set_val(hctx, idx, &new_key_bl);
       if (ret < 0)
 	return ret;
@@ -925,6 +961,11 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
   }
 
   if (op.log_op) {
+    //Yuanguo: #rados listomapkeys .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.3  -p zone_master_hyg.rgw.buckets.index
+    //         OBJ_AAA 
+    //         {0x80}0_00000000001.2.2    
+    //         {0x80}0_00000000002.3.3    <---  log_index_operation set this omap;
+    CLS_LOG(1, "YuanguoDbg: rgw_bucket_complete_op, log_index_operation\n");
     rc = log_index_operation(hctx, op.key, op.op, op.tag, entry.meta.mtime, entry.ver,
                              CLS_RGW_STATE_COMPLETE, header.ver, header.max_marker, op.bilog_flags, NULL, NULL);
     if (rc < 0)
@@ -950,14 +991,14 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
     unaccount_entry(header, remove_entry);
 
     if (op.log_op) {
-      CLS_LOG(1, "YuanguoDbg: rgw_bucket_complete_op, log_index_operation\n");
+      CLS_LOG(1, "YuanguoDbg: rgw_bucket_complete_op, remove obj, log_index_operation\n");
       rc = log_index_operation(hctx, remove_key, CLS_RGW_OP_DEL, op.tag, remove_entry.meta.mtime,
                                remove_entry.ver, CLS_RGW_STATE_COMPLETE, header.ver, header.max_marker, op.bilog_flags, NULL, NULL);
       if (rc < 0)
         continue;
     }
 
-    CLS_LOG(1, "YuanguoDbg: rgw_bucket_complete_op, cls_cxx_map_remove_key\n");
+    CLS_LOG(1, "YuanguoDbg: rgw_bucket_complete_op, remove obj, cls_cxx_map_remove_key\n");
     ret = cls_cxx_map_remove_key(hctx, k);
     if (ret < 0) {
       CLS_LOG(1, "rgw_bucket_complete_op(): cls_cxx_map_remove_key, failed to remove entry, name=%s instance=%s read_index_entry ret=%d\n", remove_key.name.c_str(), remove_key.instance.c_str(), rc);
@@ -966,6 +1007,8 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
   }
 
   CLS_LOG(1, "YuanguoDbg: rgw_bucket_complete_op, write_bucket_header\n");
+  //Yuanguo: in rgw_bucket_prepare_op, we wrote this omap header. here, write it
+  //again. some members of header have changed.
   return write_bucket_header(hctx, &header);
 }
 

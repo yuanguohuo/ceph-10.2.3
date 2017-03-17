@@ -2302,7 +2302,7 @@ int RGWPutObjProcessor_Atomic::write_data(bufferlist& bl, off_t ofs, void **phan
 
 int RGWPutObjProcessor_Atomic::handle_data(bufferlist& bl, off_t ofs, MD5 *hash, void **phandle, rgw_obj *pobj, bool *again)
 {
-  ldout(store->ctx(), 99) << "YuanguoDbg: Enter RGWPutObjProcessor_Atomic::handle_data" << dendl;
+  ldout(store->ctx(), 99) << "YuanguoDbg: Enter RGWPutObjProcessor_Atomic::handle_data, bl=" << bl << " ofs=" << ofs << dendl;
 
   *again = false;
 
@@ -4510,6 +4510,7 @@ int RGWRados::time_log_add(const string& oid, const real_time& ut, const string&
 
   librados::IoCtx io_ctx;
 
+  //Yuanguo: open pool: {zone}.rgw.log
   int r = time_log_add_init(io_ctx);
   if (r < 0) {
     return r;
@@ -4519,6 +4520,18 @@ int RGWRados::time_log_add(const string& oid, const real_time& ut, const string&
   utime_t t(ut);
   cls_log_add(op, t, section, key, bl);
 
+  //Yuanguo: write object in pool: {zone}.rgw.log. e.g.
+  //    # rados ls -p zone_master_hyg.rgw.log
+  //    ...
+  //    data_log.3
+  //    ...
+  //
+  //    content is empy, but has omap:
+  //    # rados listomapkeys data_log.3  -p zone_master_hyg.rgw.log
+  //    1_1489653363.684562_381.1 <- value: bucket info, e.g. bucket key(testbuck:5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1:3)
+
+  //send op to OSD, see cls/log/cls_log.cc:cls_log_add()
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::time_log_add, io_ctx.operate oid=" << oid << dendl;
   r = io_ctx.operate(oid, &op);
   return r;
 }
@@ -6163,11 +6176,49 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
   }
 
 
+  //Yuanguo: each bucket-shard-instance has omap header and omp key-value pairs, e.g.
+  //            //Get omap header
+  //            #rados getomapheader .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.3 hfile -p zone_master_hyg.rgw.buckets.index
+  //            #cat hfile
+  //            unreadable. it is the encoded format of 'struct rgw_bucket_dir_header', see cls/rgw/cls_rgw.cc;
+  //
+  //            //list omap keys
+  //            # rados listomapkeys .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.3 -p zone_master_hyg.rgw.buckets.index
+  //            OBJ_AAA                 <-- this is set by index_op.prepare below
+  //            {0x80}0_00000000001.2.2 <-- this is set by index_op.prepare below
+  //            {0x80}0_00000000002.3.3
   ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, Bucket::UpdateIndex prepare " << CLS_RGW_OP_ADD << dendl;
   r = index_op.prepare(CLS_RGW_OP_ADD);
   if (r < 0)
     return r;
 
+  //Yuanguo: write the meta (including the first 512KB) of the user object into pool zone_master_hyg.rgw.buckets.data. 
+  //         meta is set as the xattr of the object; e.g.
+  //
+  //         # rados ls -p zone_master_hyg.rgw.buckets.data
+  //         5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1_obj002
+  //         5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1_OBJ_AAA
+  //         5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1_obj001
+  //
+  //         # rados get 5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1_OBJ_AAA dfile -p zone_master_hyg.rgw.buckets.data
+  //         # cat dfile
+  //         the content of the user object;
+  //
+  //         # rados listxattr 5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1_OBJ_AAA -p zone_master_hyg.rgw.buckets.data
+  //         user.rgw.acl
+  //         user.rgw.content_type
+  //         user.rgw.etag
+  //         user.rgw.idtag
+  //         user.rgw.manifest
+  //         user.rgw.pg_ver
+  //         user.rgw.source_zone
+  //
+  //         # rados getxattr 5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1_OBJ_AAA user.rgw.idtag -p zone_master_hyg.rgw.buckets.data
+  //         5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.4544
+  //
+  //         # rados getxattr 5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1_OBJ_AAA user.rgw.etag  -p zone_master_hyg.rgw.buckets.data
+  //         d63000d6c7d27a169fb7fd144bd7fe5e
+  //
   ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, before operate op, ref.oid=" << ref.oid.c_str() << dendl;
   r = ref.ioctx.operate(ref.oid, &op);
   ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, after operate op, r=" << r << dendl;
@@ -6224,7 +6275,7 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
   }
   meta.canceled = false;
 
-  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, update quota stats" << dendl;
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, update quota stats, bucket=" << bucket " size=" << size << " orig_size=" << orig_size << dendl;
   /* update quota cache */
   store->quota_handler->update_stats(meta.owner, bucket, (orig_exists ? 0 : 1), size, orig_size);
 
@@ -7554,6 +7605,7 @@ int RGWRados::open_bucket_index_shard(rgw_bucket& bucket, librados::IoCtx& index
   ldout(cct, 99) << "YuanguoDbg: RGWRados::open_bucket_index_shard, bucket=" << bucket << " obj_key=" << obj_key << dendl;
 
   string bucket_oid_base;
+  //Yuanguo: open the pool: {zone}.rgw.buckets.index
   int ret = open_bucket_index_base(bucket, index_ctx, bucket_oid_base);
   if (ret < 0)
     return ret;
@@ -7562,9 +7614,44 @@ int RGWRados::open_bucket_index_shard(rgw_bucket& bucket, librados::IoCtx& index
 
   // Get the bucket info
   RGWBucketInfo binfo;
+  //Yuanguo:  read the bucket instance info from pool: {zone}.rgw.data.root
   ret = get_bucket_instance_info(obj_ctx, bucket, binfo, NULL, NULL);
 
   ldout(cct, 99) << "YuanguoDbg: RGWRados::open_bucket_index_shard, binfo=[" << binfo.bucket << " " << binfo.owner << " " << binfo.flags << " " << binfo.zonegroup << " " << binfo.placement_rule << " " << binfo.has_instance_obj << " " << binfo.num_shards << " " << binfo.bucket_index_shard_hash_type << "]" << dendl;
+
+  //Yuanguo: from the bucket instance info read from  pool: {zone}.rgw.data.root, we know the 'num_shards' of the bucket.
+  //         then,  shard_id = some_kind_of_hash(obj_key) % num_shards,  see get_bucket_index_object
+  //         and    bucket_obj = bucket_oid_base + shard_id,  also see get_bucket_index_object
+  //         bucket_obj is the oid of bucket-shard-instance in pool: {zone}.rgw.buckets.index. For example:
+  //            # rados ls  -p zone_master_hyg.rgw.buckets.index   | sort
+  //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.0    ---------------------
+  //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.1             |
+  //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.2             |
+  //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.3      8 shards of bucketX whose marker is 5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1
+  //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.4             |
+  //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.5             |
+  //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.6             |
+  //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.7    ---------------------
+  //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2.0    ---------------------
+  //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2.1             |
+  //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2.2             |
+  //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2.3      8 shards of bucketY whose marker is 5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2
+  //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2.4             |
+  //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2.5             |
+  //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2.6             |
+  //            .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.2.7    ---------------------
+  // 
+  //  each bucket-shard-instance has omap header and omp key-value pairs, e.g.
+  //            //Get omap header
+  //            #rados getomapheader .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.3 hfile -p zone_master_hyg.rgw.buckets.index
+  //            #cat hfile
+  //            unreadable. it is the encoded format of 'struct rgw_bucket_dir_header', see cls/rgw/cls_rgw.cc;
+  //
+  //            //list omap keys
+  //            # rados listomapkeys .dir.5b2752c1-4872-4bb7-a997-e0282cd0be6b.4137.1.3 -p zone_master_hyg.rgw.buckets.index
+  //            OBJ_AAA               <-- content is encoded format of 'struct rgw_bucket_dir_entry', see cls/rgw/cls_rgw.cc:rgw_bucket_prepare_op()
+  //            {0x80}0_00000000001.2.2   <-- content is encoded format of 'struct rgw_bi_log_entry', see cls/rgw/cls_rgw.cc:rgw_bucket_prepare_op();
+  //            {0x80}0_00000000002.3.3
 
   if (ret < 0)
     return ret;
@@ -11331,6 +11418,7 @@ int RGWRados::cls_obj_prepare_op(BucketShard& bs, RGWModifyOp op, string& tag,
   cls_rgw_bucket_prepare_op(o, op, tag, key, obj.get_loc(), get_zone().log_data, bilog_flags);
 
   ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_obj_prepare_op, bs.index_ctx.operate" << dendl;
+  //Yuanguo: send the op (cls operations to OSD); cls/rgw/cls_rgw.cc:rgw_bucket_prepare_op will do the job;
   int r = bs.index_ctx.operate(bs.bucket_obj, &o);
   return r;
 }
@@ -11376,6 +11464,7 @@ int RGWRados::cls_obj_complete_op(BucketShard& bs, RGWModifyOp op, string& tag,
   AioCompletion *c = librados::Rados::aio_create_completion(NULL, NULL, NULL);
 
   ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_obj_complete_op, bs.index_ctx.aio_operate" << dendl;
+  //Yuanguo: send the op (cls operations to OSD); cls/rgw/cls_rgw.cc:rgw_bucket_complete_op will do the job;
   int ret = bs.index_ctx.aio_operate(bs.bucket_obj, c, &o);
   c->release();
   return ret;
