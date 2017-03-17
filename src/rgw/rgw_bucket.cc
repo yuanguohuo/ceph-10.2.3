@@ -1581,6 +1581,7 @@ int RGWDataChangesLog::list_entries(int shard, const real_time& start_time, cons
 
   list<cls_log_entry> log_entries;
 
+  //Yuanguo: oids[0]="data_log.0", oids[1]="data_log.1" ...
   int ret = store->time_log_list(oids[shard], start_time, end_time,
 				 max_entries, log_entries, marker,
 				 out_marker, truncated);
