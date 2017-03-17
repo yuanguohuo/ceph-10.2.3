@@ -6275,7 +6275,7 @@ int RGWRados::Object::Write::write_meta(uint64_t size,
   }
   meta.canceled = false;
 
-  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, update quota stats, bucket=" << bucket " size=" << size << " orig_size=" << orig_size << dendl;
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWRados::Object::Write::write_meta, update quota stats, bucket=" << bucket << " size=" << size << " orig_size=" << orig_size << dendl;
   /* update quota cache */
   store->quota_handler->update_stats(meta.owner, bucket, (orig_exists ? 0 : 1), size, orig_size);
 
