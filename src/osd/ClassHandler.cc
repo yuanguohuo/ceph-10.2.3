@@ -110,6 +110,14 @@ int ClassHandler::_load_class(ClassData *cls)
 	     cls->name.c_str());
     dout(10) << "_load_class " << cls->name << " from " << fname << dendl;
 
+    //Yuanguo: dlopen is from /usr/include/dlfcn.h.
+    //         dlopen() loads the dynamic library file named by the null-terminated string filename and returns an opaque "handle" for 
+    //         the dynamic library. If the library has dependencies on other shared libraries, then these are also automatically loaded 
+    //         by the dynamic linker using the same search rules (search the so file in the system).
+    //
+    //         RTLD_NOW: If this value is specified, or the environment variable LD_BIND_NOW is set to a nonempty string, all undefined 
+    //              symbols in the library are resolved before dlopen() returns. If this cannot be done, an error is returned.
+    //
     cls->handle = dlopen(fname, RTLD_NOW);
     if (!cls->handle) {
       struct stat st;
@@ -128,6 +136,14 @@ int ClassHandler::_load_class(ClassData *cls)
     }
 
     cls_deps_t *(*cls_deps)();
+
+    //Yuanguo: dlsym is from /usr/include/dlfcn.h.
+    //         dlsym() takes a "handle" of a dynamic library returned by dlopen() and the null-terminated symbol name, returning the memory 
+    //         address where that symbol is loaded into. If the symbol is not found, in the specified library or any of the libraries that 
+    //         were automatically loaded by dlopen() when that library was loaded, dlsym() returns NULL.
+
+    //Yuanguo: I didn't find "class_deps" in ceph's built in cls classes. I guess: common dependencies can be done by dlopen automatically,
+    //         'class_deps' is for user's specific requirements. Right ???
     cls_deps = (cls_deps_t *(*)())dlsym(cls->handle, "class_deps");
     if (cls_deps) {
       cls_deps_t *deps = cls_deps();
@@ -158,6 +174,7 @@ int ClassHandler::_load_class(ClassData *cls)
   }
   
   // initialize
+  //Yuanguo: ceph's built in cls classes have '__cls_init', e.g. cls/rgw/cls_rgw.cc
   void (*cls_init)() = (void (*)())dlsym(cls->handle, "__cls_init");
   if (cls_init) {
     cls->status = ClassData::CLASS_INITIALIZING;

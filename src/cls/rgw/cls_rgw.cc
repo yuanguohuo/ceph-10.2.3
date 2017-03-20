@@ -3287,6 +3287,12 @@ void __cls_init()
 {
   CLS_LOG(1, "Loaded rgw class!");
 
+  //Yuanguo: find the ClassData instance from objclass/class_api.cc : static ClassHandler *ch, and save its addr to 'h_class';
+  //         ch is a global variable, so the ClassData instance is the same one as in the call path:
+  //                  OSD::init -->
+  //                  open_all_classes -->
+  //                  open_class  -->
+  //                  _load_class   (its param 'cls' equals to 'h_class' here)
   cls_register("rgw", &h_class);
 
   /* bucket index */
