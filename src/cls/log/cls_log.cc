@@ -159,7 +159,7 @@ static int cls_log_add(cls_method_context_t hctx, bufferlist *in, bufferlist *ou
       return ret;
   }
 
-  CLS_LOG(1, "YuanguoDbg: cls_log_add, write_header, header.max_marker=%s\n", ret, header.max_marker.c_str());
+  CLS_LOG(1, "YuanguoDbg: cls_log_add, write_header, ret=%d header.max_marker=%s\n", ret, header.max_marker.c_str());
   //Yuanguo: set omap header which can be read by:
   //    # rados getomapheader data_log.3 ttt -p zone_master_hyg.rgw.log
   ret = write_header(hctx, header);
