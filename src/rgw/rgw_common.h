@@ -1218,7 +1218,7 @@ class RGWRequest;
 /** Store all the state necessary to complete and respond to an HTTP request*/
 struct req_state {
   CephContext *cct;
-  RGWClientIO *cio;
+  RGWClientIO *cio; //Yuanguo: for civetweb, it's RGWMongoose
   RGWRequest *req; /// XXX: re-remove??
   http_op op;
   RGWOpType op_type;

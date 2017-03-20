@@ -36,6 +36,7 @@ RGWMongoose::RGWMongoose(mg_connection *_conn, int _port)
 
 int RGWMongoose::read_data(char *buf, int len)
 {
+  dout(99) << "YuanguoDbg: Enter RGWMongoose::read_data, len=" << len << dendl;
   return mg_read(conn, buf, len);
 }
 

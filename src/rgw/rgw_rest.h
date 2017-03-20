@@ -32,6 +32,7 @@ extern int rgw_rest_read_all_input(struct req_state *s, char **data, int *plen,
  * hierarchy matching (e.g.) REST backends (may be replaced w/dynamic
  * typed req_state) */
 static inline RGWStreamIO* STREAM_IO(struct req_state* s) {
+  //Yuanguo: for civetweb, c->cio is RGWMongoose instance;
   return static_cast<RGWStreamIO*>(s->cio);
 }
 

@@ -1065,6 +1065,10 @@ int RGWPutObj_ObjStore::get_data(bufferlist& bl)
     bufferptr bp(cl);
 
     int read_len; /* cio->read() expects int * */
+
+    //Yuanguo: for civetweb, STREAM_IO(s), c->cio is RGWMongoose instance; so the call path will be
+    //             RGWStreamIO::read()  -->     // RGWMongoose has no read func, so inherit from RGWStreamIO
+    //             RGWMongoose::read_data()
     int r = STREAM_IO(s)->read(bp.c_str(), cl, &read_len,
                                s->aws4_auth_needs_complete);
     if (r < 0) {

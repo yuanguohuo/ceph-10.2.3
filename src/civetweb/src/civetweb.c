@@ -2300,6 +2300,14 @@ int mg_read_inner(struct mg_connection *conn, void *buf, size_t len)
         }
 
         /* Return buffered data */
+        //Yuanguo: 
+        //   1. when we read the request (HTTP request + headers), we might have read some HTTP body, which is in the buffer;
+        //          see  worker_thread_run   -->
+        //               process_new_connection   -->
+        //               getreq   -->
+        //               read_request.
+        //   2. we might have read more content than len (the param) in previous call, which is also in the buffer;
+        // In both cases, consume the buffered data first;
         body = conn->buf + conn->request_len + conn->consumed_content;
         buffered_len = (int64_t)(&conn->buf[conn->data_len] - body);
         if (buffered_len > 0) {
@@ -2315,6 +2323,9 @@ int mg_read_inner(struct mg_connection *conn, void *buf, size_t len)
 
         /* We have returned all buffered data. Read new data from the remote
            socket. */
+        //Yuanguo: pull_all doesn't mean to read all the rest of the HTTP body, it means to rean len bytes of HTTP body;
+        //         if len=0 (e.g. the buffered data is sufficient for current read, len becomes 0, see above),
+        //         then pull_all will return immediately.
         n = pull_all(NULL, conn, (char *) buf, (int64_t) len);
         nread = n >= 0 ? nread + n : n;
     }
