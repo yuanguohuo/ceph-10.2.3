@@ -164,7 +164,6 @@ public:
 	  ctx->pg->requeue_op(ctx->op);
       }
       ctx->pg->close_op_ctx(ctx);
-      dout(99) << "YuanguoDbg: CopyFromCallback::finish, released rw locks" << dendl;
     }
   }
 
