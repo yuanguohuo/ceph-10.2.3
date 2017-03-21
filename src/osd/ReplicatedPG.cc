@@ -2104,7 +2104,7 @@ void ReplicatedPG::do_op(OpRequestRef& op)
     //Yuanguo: MOSDOp-A and MOSDOp-B of a given object will be sent to the same OSD (omit backup OSDs for now),
     //  but this OSD has multiple threads. The lock here is to prevent more than one threads from accessing the given
     //  object at the same time.
-    dout(99) << " YuanguoDbg: ReplicatedPG::do_op, got rw locks of object: " << m->oid << dendl;
+    dout(99) << " YuanguoDbg: ReplicatedPG::do_op, got rw locks of object: " << m->get_oid() << dendl;
   }
 
   if (r) {
@@ -6897,7 +6897,7 @@ void ReplicatedPG::complete_read_ctx(int result, OpContext *ctx)
   //Yuanguo: close_op_ctx() also released rw locks. Are they locks got at this call path  ????
   //               ReplicatedPG::do_op  -->
   //               get_rw_locks
-  dout(99) << "YuanguoDbg: released rw locks of object: " << m->oid << dendl;
+  dout(99) << "YuanguoDbg: released rw locks of object: " << m->get_oid() << dendl;
 }
 
 // ========================================================================
