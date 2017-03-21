@@ -2099,6 +2099,13 @@ void ReplicatedPG::do_op(OpRequestRef& op)
     close_op_ctx(ctx);
     return;
   }
+  else  //Yuanguo: else branch is added by yuanguo, for log;
+  {
+    //Yuanguo: MOSDOp-A and MOSDOp-B of a given object will be sent to the same OSD (omit backup OSDs for now),
+    //  but this OSD has multiple threads. The lock here is to prevent more than one threads from accessing the given
+    //  object at the same time.
+    dout(99) << " YuanguoDbg: ReplicatedPG::do_op, got rw lock of object: " << m->oid << dendl;
+  }
 
   if (r) {
     dout(20) << __func__ << " returned an error: " << r << dendl;
@@ -8561,6 +8568,12 @@ void ReplicatedPG::remove_repop(RepGather *repop)
 
   release_object_locks(
     repop->lock_manager);
+
+  //Yuanguo: is it the lock got at this call path  ????
+  //               ReplicatedPG::do_op  -->
+  //               get_rw_locks
+  dout(99) << "YuanguoDbg: released rw lock of object: " << repop->hoid << dendl;
+
   repop->put();
 
   osd->logger->dec(l_osd_op_wip);
