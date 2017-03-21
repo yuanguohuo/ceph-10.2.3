@@ -6897,7 +6897,7 @@ void ReplicatedPG::complete_read_ctx(int result, OpContext *ctx)
   //Yuanguo: close_op_ctx() also released rw locks. Are they locks got at this call path  ????
   //               ReplicatedPG::do_op  -->
   //               get_rw_locks
-  dout(99) << "YuanguoDbg: released rw locks of object: " << repop->hoid << dendl;
+  dout(99) << "YuanguoDbg: released rw locks of object: " << m->oid << dendl;
 }
 
 // ========================================================================
