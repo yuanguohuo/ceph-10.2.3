@@ -8944,29 +8944,30 @@ ObjectContextRef ReplicatedPG::get_object_context(const hobject_t& soid,
     (pg_log.get_log().objects.count(soid) &&
       pg_log.get_log().objects.find(soid)->second->op ==
       pg_log_entry_t::LOST_REVERT));
-  ObjectContextRef obc = object_contexts.lookup(soid);
+  ObjectContextRef obc = object_contexts.lookup(soid);  //Yuanguo: find in the cache;
   osd->logger->inc(l_osd_object_ctx_cache_total);
   if (obc) {
     osd->logger->inc(l_osd_object_ctx_cache_hit);
     dout(10) << __func__ << ": found obc in cache: " << obc
 	     << dendl;
-  } else {
+  } else {   //Yuanguo: not in the cache;
     dout(10) << __func__ << ": obc NOT found in cache: " << soid << dendl;
     // check disk
     bufferlist bv;
-    if (attrs) {
+    if (attrs) {   //Yuanguo: not in the cache, but provided by param "attrs"
       assert(attrs->count(OI_ATTR));
       bv = attrs->find(OI_ATTR)->second;
-    } else {
-      int r = pgbackend->objects_get_attr(soid, OI_ATTR, &bv);
-      if (r < 0) {
+    } else { //Yuanguo: not in the cache, and not provided by param "attrs"
+      int r = pgbackend->objects_get_attr(soid, OI_ATTR, &bv); //Yuanguo: get attrs from objectstore (filestore)
+      if (r < 0) {  //Yuanguo: failed to get attrs from objectstore (filestore)
 	if (!can_create) {
 	  dout(10) << __func__ << ": no obc for soid "
 		   << soid << " and !can_create"
 		   << dendl;
-	  return ObjectContextRef();   // -ENOENT!
+	  return ObjectContextRef();   // -ENOENT! //Yuanguo: not in cache, not provided by param "attrs", not in objectstore (filestore), and can_create=false
 	}
 
+  //Yuanguo: not in cache, not provided by param "attrs", not in objectstore (filestore), but can_create=true
 	dout(10) << __func__ << ": no obc for soid "
 		 << soid << " but can_create"
 		 << dendl;
@@ -8974,7 +8975,7 @@ ObjectContextRef ReplicatedPG::get_object_context(const hobject_t& soid,
 	object_info_t oi(soid);
 	SnapSetContext *ssc = get_snapset_context(
 	  soid, true, 0, false);
-	obc = create_object_context(oi, ssc);
+	obc = create_object_context(oi, ssc);  //Yuanguo, create it and set obc->obs.exists = false;
 	dout(10) << __func__ << ": " << obc << " " << soid
 		 << " " << obc->rwstate
 		 << " oi: " << obc->obs.oi
@@ -8984,6 +8985,8 @@ ObjectContextRef ReplicatedPG::get_object_context(const hobject_t& soid,
       }
     }
 
+    //Yuanguo: not in the cache, but attrs were either provided as param "attrs", or retrieved from objectstore (filestore),
+    //     in both cases, the obc is "existing", create it based on attrs and set obc->obs.exists = true.
     object_info_t oi(bv);
 
     assert(oi.soid.pool == (int64_t)info.pgid.pool());

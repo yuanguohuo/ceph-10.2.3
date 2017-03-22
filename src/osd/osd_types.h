@@ -3455,8 +3455,8 @@ public:
 
 
   // set if writes for this object are blocked on another objects recovery
-  ObjectContextRef blocked_by;      // object blocking our writes
-  set<ObjectContextRef> blocking;   // objects whose writes we block
+  ObjectContextRef blocked_by;      // object blocking our writes    //Yuanguo: another object, not this object!
+  set<ObjectContextRef> blocking;   // objects whose writes we block //Yuanguo: other objects blocked by this object!
 
   // any entity in obs.oi.watchers MUST be in either watchers or unconnected_watchers.
   map<pair<uint64_t, entity_name_t>, WatchRef> watchers;
@@ -3479,6 +3479,22 @@ public:
     mod->setattrs(to_set);
   }
   
+
+  //Yuanguo: Question: who is protecting RWState::state and RWState::count from being accessed concurrently? For example:
+  //         rwstate is in RWNONE state, then
+  //                 thread-A call rwstate.get_read_lock()
+  //                 thread-B call rwstate.get_write_lock()
+  //         they may both lock successfully.
+  //         I checked the call path below, but I didn't find the answer.
+  //                 ReplicatedPG::do_op    ---->
+  //                 get_rw_locks (ReplicatedPG::get_rw_locks) ---->
+  //                 ctx->lock_manager.get_lock_type (ObcLockManager::get_lock_type)  ---->
+  //                 obc->get_lock_type (ObjectContext::get_lock_type) ---->
+  //                             ObjectContext::get_write
+  //                             ObjectContext::get_read
+  //                             ObjectContext::get_excl
+  //Yuanguo: Answer:
+  //
   struct RWState {
     enum State {
       RWNONE,
@@ -3499,6 +3515,12 @@ public:
       return get_state_name(state);
     }
 
+    //Yuanguo: compare to  
+    //              ObjectContext::blocked_by
+    //         and
+    //              ObjectContext::blocking
+    //         which are about blocking-relationship between different objects;
+    // here, RWState::waiters is about blocking-relationship between operations(read,write,excl) on current object;
     list<OpRequestRef> waiters;  ///< ops waiting on state change
     int count;              ///< number of readers or writers
 
@@ -3568,7 +3590,7 @@ public:
 	// fall through
       case RWWRITE:
 	count++;
-	return true;
+	return true; //Yuanguo: there can be more than one WRITE. For EXCL, there can only be one!
       case RWREAD:
 	return false;
       case RWEXCL:
@@ -3590,7 +3612,7 @@ public:
       case RWREAD:
 	return false;
       case RWEXCL:
-	return false;
+	return false;  //Yuanguo: there can only be one EXCL!
       default:
 	assert(0 == "unhandled case");
 	return false;
@@ -3688,10 +3710,15 @@ public:
 		 bool *requeue_recovery,
 		 bool *requeue_snaptrimmer) {
     rwstate.put_excl(to_wake);
+
+    //Yuanguo: when I held the lock, a get_recovery_read() failed (but it set rwstate.recovery_read_marker = true)
+    //    now, I drop the lock, return *requeue_recovery as true;
     if (rwstate.empty() && rwstate.recovery_read_marker) {
       rwstate.recovery_read_marker = false;
       *requeue_recovery = true;
     }
+
+    //Yuanguo: similar with recovery_read_marker;
     if (rwstate.empty() && rwstate.snaptrimmer_write_marker) {
       rwstate.snaptrimmer_write_marker = false;
       *requeue_snaptrimmer = true;
@@ -3701,10 +3728,15 @@ public:
 		 bool *requeue_recovery,
 		 bool *requeue_snaptrimmer) {
     rwstate.put_write(to_wake);
+
+    //Yuanguo: when I and some other write-ops held the lock, a get_recovery_read() failed (but it set rwstate.recovery_read_marker = true)
+    //    now, I drop the lock (I am the last one dropping the lock), return *requeue_recovery as true;
     if (rwstate.empty() && rwstate.recovery_read_marker) {
       rwstate.recovery_read_marker = false;
       *requeue_recovery = true;
     }
+
+    //Yuanguo: similar with recovery_read_marker;
     if (rwstate.empty() && rwstate.snaptrimmer_write_marker) {
       rwstate.snaptrimmer_write_marker = false;
       *requeue_snaptrimmer = true;
@@ -3758,19 +3790,19 @@ public:
   // do simple synchronous mutual exclusion, for now.  no waitqueues or anything fancy.
   void ondisk_write_lock() {
     lock.Lock();
-    writers_waiting++;
-    while (readers_waiting || readers)
+    writers_waiting++;  //Yuanguo: I am a waiting writer;
+    while (readers_waiting || readers) //Yuanguo: wait until there is no readers_waiting or readers;
       cond.Wait(lock);
-    writers_waiting--;
-    unstable_writes++;
+    writers_waiting--;  //Yuanguo: I am not a waiting writer now,
+    unstable_writes++;  //Yuanguo: I am a writer!
     lock.Unlock();
   }
   void ondisk_write_unlock() {
     lock.Lock();
     assert(unstable_writes > 0);
-    unstable_writes--;
-    if (!unstable_writes && readers_waiting)
-      cond.Signal();
+    unstable_writes--;  //Yuanguo: I am not a writer now!
+    if (!unstable_writes && readers_waiting) //Yuanguo: there is no writer, but there are readers waiting,
+      cond.Signal();   //Yuanguo: signal them.
     lock.Unlock();
   }
   void ondisk_read_lock() {

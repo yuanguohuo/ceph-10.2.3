@@ -814,6 +814,19 @@ inline void decode(std::deque<T>& ls, bufferlist::iterator& p)
  * @param compat oldest code version that can decode it
  * @param bl bufferlist to encode to
  */
+//Yuanguo: before encoding the actual content:
+//               1              1                   4
+//   bl --> +-------------+-------------+------------------------------+----
+//          |  struct_v   |struct_compat|          struct_len          | ...
+//          +-------------+-------------+------------------------------+---
+//                        ^             ^
+//                        |             |
+//              struct_compat_it   struct_len_it
+//
+//  Yuanguo:  
+//   'struct_compat', set to compat currently, but may be changed later (see ENCODE_FINISH_NEW_COMPAT)
+//   'struct_len', it is just reserved space, will be filled later (see ENCODE_FINISH_NEW_COMPAT)
+//   struct_compat_it and struct_len_it are 2 pointers into the bufferlist space.
 #define ENCODE_START(v, compat, bl)			     \
   __u8 struct_v = v, struct_compat = compat;		     \
   ::encode(struct_v, (bl));				     \
@@ -833,6 +846,18 @@ inline void decode(std::deque<T>& ls, bufferlist::iterator& p)
  * @param bl bufferlist we were encoding to
  * @param new_struct_compat struct-compat value to use
  */
+//Yuanguo: after encoding the actual content:
+//               1              1                   4
+//   bl --> +-------------+-------------+------------------------------+------------------------+
+//          |  struct_v   |struct_compat|          struct_len          | the actual content ... |
+//          +-------------+-------------+------------------------------+------------------------+
+//                        ^             ^                                                       ^
+//                        |             |                                                       |
+//              struct_compat_it   struct_len_it                                          (bl).length()
+//
+//   1. calculate the length of the actual content:  (bl).length() - struct_len_it.get_off() - 4; 
+//   2. copy the length calculated in step 1 to the reserved space;
+//   3. overwrite struct_compat with new_struct_compat if needed.
 #define ENCODE_FINISH_NEW_COMPAT(bl, new_struct_compat)			\
   } while (false);							\
   struct_len = (bl).length() - struct_len_it.get_off() - sizeof(struct_len); \
