@@ -1283,8 +1283,8 @@ public:
 
 private:
 
-  ThreadPool osd_tp;
-  ShardedThreadPool osd_op_tp;
+  ThreadPool osd_tp;           //Yuanguo: not a sharded thread pool, working on peering_wq;
+  ShardedThreadPool osd_op_tp; //Yuanguo: a sharded thread pool, for osd IO, working on op_shardedwq;
   ThreadPool recovery_tp;
   ThreadPool disk_tp;
   ThreadPool command_tp;

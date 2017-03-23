@@ -158,11 +158,15 @@ int RGWAsyncLockSystemObj::_send_request()
     return r;
   }
 
+  ldout(store->ctx(), 99) << "Yuanguo: RGWAsyncLockSystemObj::_send_request, succeeded to open pool: " << obj.bucket.name << dendl;
+
   rados::cls::lock::Lock l(lock_name);
   utime_t duration(duration_secs, 0);
   l.set_duration(duration);
   l.set_cookie(cookie);
   l.set_renew(true);
+
+  ldout(store->ctx(), 99) << "Yuanguo: RGWAsyncLockSystemObj::_send_request, lock " << obj.get_object() << ", duration=" << duration << dendl;
 
   return l.lock_exclusive(&ioctx, obj.get_object());
 }

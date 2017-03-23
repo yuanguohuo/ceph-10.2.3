@@ -234,6 +234,12 @@ class RGWDataSyncStatusManager {
   rgw_data_sync_status sync_status;
   map<int, rgw_obj> shard_objs;
 
+  //Yuanguo: num_shards is got from remote zone/rgw. see
+  //    RGWDataSyncStatusManager::init -->
+  //    source_log.read_log_info(RGWRemoteDataLog::read_log_info)
+  //
+  //    At remote zone/rgw, the read request is processed by RGWOp_DATALog_Info::execute,
+  //    which returns rgw_data_log_num_shards (config item) directly;
   int num_shards;
 
 public:

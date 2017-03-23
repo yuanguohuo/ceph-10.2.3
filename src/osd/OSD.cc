@@ -1644,8 +1644,8 @@ OSD::OSD(CephContext *cct_, ObjectStore *store_,
   asok_hook(NULL),
   osd_compat(get_osd_compat_set()),
   state(STATE_INITIALIZING),
-  osd_tp(cct, "OSD::osd_tp", "tp_osd", cct->_conf->osd_op_threads, "osd_op_threads"),
-  osd_op_tp(cct, "OSD::osd_op_tp", "tp_osd_tp",
+  osd_tp(cct, "OSD::osd_tp", "tp_osd", cct->_conf->osd_op_threads, "osd_op_threads"), //Yuanguo: not a sharded thread pool, for peering;
+  osd_op_tp(cct, "OSD::osd_op_tp", "tp_osd_tp",  //Yuanguo: a sharded thread pool, for osd IO;
     cct->_conf->osd_op_num_threads_per_shard * cct->_conf->osd_op_num_shards),
   recovery_tp(cct, "OSD::recovery_tp", "tp_osd_recov", cct->_conf->osd_recovery_threads, "osd_recovery_threads"),
   disk_tp(cct, "OSD::disk_tp", "tp_osd_disk", cct->_conf->osd_disk_threads, "osd_disk_threads"),

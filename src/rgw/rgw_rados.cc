@@ -3009,6 +3009,7 @@ public:
     return 0;
   }
 
+  //Yuanguo: the body of this thread;
   int process() {
     while (!initialized) {
       if (going_down()) {
@@ -3201,15 +3202,18 @@ void RGWRados::finalize()
 int RGWRados::init_rados()
 {
   int ret = 0;
+
+  //Yuanguo: create rgw_num_rados_handles librados::Rados objects, they are the actual ceph cluster clients;
+  //   these clients are shared by rgw_thread_pool_size threads in a fair way (see my notes at RGWRados::rados)
   auto handles = std::vector<librados::Rados>{cct->_conf->rgw_num_rados_handles};
 
   for (auto& r : handles) {
-    ret = r.init_with_context(cct);
+    ret = r.init_with_context(cct);  //Yuanguo: init a librados::Rados object (ceph cluster client)
     if (ret < 0) {
       return ret;
     }
 
-    ret = r.connect();
+    ret = r.connect();  //Yuanguo: librados::Rados object (ceph cluster client) connect to the ceph cluster;
     if (ret < 0) {
       return ret;
     }
@@ -3749,9 +3753,22 @@ int RGWRados::init_complete()
     run_sync_thread = false;
   }
 
-  //Yuanguo: RGWAsyncRadosProcessor is used to communicate with rados (osd cluster); you can put 
-  //requests (such as RGWAsyncGetSystemObj, RGWAsyncPutSystemObj, RGWAsyncPutSystemObjAttrs...) into 
-  //its queue, and these requests will be handled (sent to raods) asynchronousely.
+  //Yuanguo: RGWAsyncRadosProcessor is used to communicate with others; you can put 
+  //requests such as (see their _send_request functions)
+  //      RGWAsyncGetSystemObj          <-- communicate with ceph cluster;
+  //      RGWAsyncPutSystemObj          <-- communicate with ceph cluster;
+  //      RGWAsyncPutSystemObjAttrs     <-- communicate with ceph cluster;
+  //      RGWAsyncLockSystemObj         <-- lock (cls lock) an object (RGWAsyncLockSystemObj::obj);
+  //      RGWAsyncUnlockSystemObj       <-- unlock ...
+  //      RGWAsyncWait                  <-- not communicate with others, but just wait for a condition;
+  //      RGWAsyncGetBucketInstanceInfo <-- get bucket instance info from ceph cluster;
+  //      RGWAsyncFetchRemoteObj        <-- get obj from remote zone/rgw;
+  //      RGWAsyncRemoveObj             <-- delete an obj from ceph cluster;
+  //      RGWAsyncStatObj               <-- get obj-state from ceph cluster;
+  //into its queue, and these requests will be handled (sent) asynchronousely.
+  //These threads will use it:
+  //     RGWMetaSyncProcessorThread
+  //     RGWDataSyncProcessorThread
   async_rados = new RGWAsyncRadosProcessor(this, cct->_conf->rgw_num_async_rados_threads);
   async_rados->start();
 

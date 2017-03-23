@@ -431,6 +431,9 @@ class RGWDataChangesLog {
     void stop();
   };
 
+  //Yuanguo: RGWDataChangesLog::add_entry() might not actually send the update to ceph cluster, 
+  //     but just registered (by calling register_renew) the update. This thread sends them from
+  //     time to time (rgw_data_log_window*3/4, see RGWDataChangesLog::ChangesRenewThread::entry); 
   ChangesRenewThread *renew_thread;
 
 public:

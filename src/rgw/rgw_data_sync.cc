@@ -511,6 +511,9 @@ public:
 
 int RGWRemoteDataLog::read_log_info(rgw_datalog_info *log_info)
 {
+  //Yuanguo:
+  //    At remote zone/rgw, the read request is processed by RGWOp_DATALog_Info::execute,
+  //    which returns rgw_data_log_num_shards (config item) directly;
   rgw_http_param_pair pairs[] = { { "type", "data" },
                                   { NULL, NULL } };
 
@@ -1534,6 +1537,9 @@ int RGWDataSyncStatusManager::init()
   }
 
   rgw_datalog_info datalog_info;
+  //Yuanguo: read from remote zone/rgw:
+  //    At remote zone/rgw, the read request is processed by RGWOp_DATALog_Info::execute,
+  //    which returns rgw_data_log_num_shards (config item) directly;
   r = source_log.read_log_info(&datalog_info);
   if (r < 0) {
     ldout(store->ctx(), 5) << "ERROR: master.read_log_info() returned r=" << r << dendl;
@@ -1544,6 +1550,7 @@ int RGWDataSyncStatusManager::init()
   num_shards = datalog_info.num_shards;
 
   for (int i = 0; i < num_shards; i++) {
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWDataSyncStatusManager::init, create rgw_obj, bucket=" << store->get_zone_params().log_pool << " source_zone=" << source_zone << " i=" << i << " obj=" << shard_obj_name(source_zone, i) << dendl;
     shard_objs[i] = rgw_obj(store->get_zone_params().log_pool, shard_obj_name(source_zone, i));
   }
 

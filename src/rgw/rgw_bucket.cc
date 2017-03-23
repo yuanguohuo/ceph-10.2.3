@@ -1373,6 +1373,10 @@ int RGWDataChangesLog::choose_oid(const rgw_bucket_shard& bs) {
     return (int)r;
 }
 
+//Yuanguo: RGWDataChangesLog::add_entry() might not actually send the update to ceph cluster, 
+//     but just registered (by calling register_renew) the update. This function sends them.
+//     It is the body of RGWDataChangesLog::ChangesRenewThread, see
+//        RGWDataChangesLog::ChangesRenewThread::entry
 int RGWDataChangesLog::renew_entries()
 {
   if (!store->need_to_log_data())
@@ -1495,7 +1499,7 @@ int RGWDataChangesLog::add_entry(rgw_bucket& bucket, int shard_id) {
 
   if (now < status->cur_expiration) {
 
-    ldout(cct, 99) << "YuanguoDbg: RGWDataChangesLog::add_entry, no need to send" << dendl;
+    ldout(cct, 99) << "YuanguoDbg: RGWDataChangesLog::add_entry, not send, recently completed" << dendl;
 
     /* no need to send, recently completed */
     status->lock->Unlock();
@@ -1517,7 +1521,7 @@ int RGWDataChangesLog::add_entry(rgw_bucket& bucket, int shard_id) {
     int ret = cond->wait();
     cond->put();
 
-    ldout(cct, 99) << "YuanguoDbg: RGWDataChangesLog::add_entry, ret=" << ret << dendl;
+    ldout(cct, 99) << "YuanguoDbg: RGWDataChangesLog::add_entry, not send, status->pending is true" << dendl;
 
     if (!ret) {
       register_renew(bs);
