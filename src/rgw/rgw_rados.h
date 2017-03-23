@@ -1816,6 +1816,29 @@ class RGWRados
 protected:
   CephContext *cct;
 
+  //Yuanguo: 
+  //   1. A "librados::Rados" object is an "actual" ceph cluster client.
+  //
+  //   2. A RGWRados instance has a number of ceph cluster clients (configured by rgw_num_rados_handles) 
+  //      and these clients are stored in the vector 'rados' (std::vector<librados::Rados> rados), see 
+  //      RGWRados::init_rados()!
+  //
+  //   3. A RGWRados instance has a number of threads (configured by rgw_thread_pool_size, which is often 
+  //      greater than or equal to rgw_num_rados_handles).
+  //
+  //   4. That's to say, 'rgw_thread_pool_size' threads will share 'rgw_num_rados_handles' clients; Then 
+  //      how does a thread get a client?
+  //      The answer is 'rados_map', which saves the index of the client in vector 'rados' a thread is using.
+  //                    rados_map:  thread_id ==> index of client in vector 'rados'
+  //      When a thread wants to get a client (see RGWRados::get_rados_handle)
+  //         A. if there is only one client, return it! (all threads share a singe client);
+  //         B. else, if it already has a client (has an entry in 'rados_map' for its thread_id), return it!
+  //         C. else, use the client whose index is 'next_rados_handle', and increase 'next_rados_handle'.
+  //            And 'next_rados_handle' will restart at 0 when it reaches rgw_num_rados_handles, so threads 
+  //            share these clients in a fair way.
+  //
+  //   next_rados_handle: used to get the next client. restart at 0 when reach rgw_num_rados_handles. 
+  //   handle_lock: protect next_rados_handle, rados, rados_map from being modified concurrently.
   std::vector<librados::Rados> rados;
   uint32_t next_rados_handle;
   RWLock handle_lock;
@@ -3197,6 +3220,35 @@ protected:
   rgw_bucket bucket;
   string obj_str;
 
+  //Yuanguo: unique_tag will become the idtag of the object. And it was generated at 
+  //                  process_request  -->
+  //                  s->req_id = store->unique_id(req->id);
+  //     It was copied to RGWPutObjProcessor_Atomic::unique_tag at 
+  //                  RGWPutObj::select_processor -->
+  //                  new RGWPutObjProcessor_Atomic(..., s->req_id, ...)
+  //     see store->unique_id(req->id), we know 
+  //         unique_tag = {zone-id} + {rados-instance-id} + {req->id}
+  //     
+  //     rados-instance-id: a number got from monitor. The longer story:
+  //         RGWRados::init_rados() func creates a number (configured by rgw_num_rados_handles) of 
+  //         "librados::Rados" objects (the ceph cluster clients). And then
+  //               1. init each of them by 
+  //                     librados::Rados::init_with_context 
+  //                     --> rados_create_with_context
+  //                     --> new librados::RadosClient
+  //               2. connect ceph cluster by
+  //                     librados::Rados::connect
+  //                     --> librados::RadosClient::connect
+  //                     --> instance_id = monclient.get_global_id();
+  //     That's to say, each "librados::Rados" object (ceph cluster client) has a different 
+  //     instance_id;
+  //     A number (rgw_thread_pool_size) of rgw threads share rgw_num_rados_handles clients in a fair
+  //     way (see my comments at RGWRados::rados!) 
+  //
+  //     req->id: atomic64_t, increase locally, see 
+  //                  civetweb_callback -->
+  //                             RGWRequest req(store->get_new_req_id());
+  //                             process_request(..., &req, ...)
   string unique_tag;
 
   rgw_obj head_obj;

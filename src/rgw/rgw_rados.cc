@@ -2513,6 +2513,9 @@ int RGWPutObjProcessor_Atomic::do_complete(string& etag, real_time *mtime, real_
 
   obj_op.meta.data = &first_chunk;
   obj_op.meta.manifest = &manifest;
+
+  //Yuanguo: 'obj_op.meta.ptag' will become the idtag of the object. See my comments
+  //         at RGWPutObjProcessor_Atomic::unique_tag!
   obj_op.meta.ptag = &unique_tag; /* use req_id as operation tag */
   obj_op.meta.if_match = if_match;
   obj_op.meta.if_nomatch = if_nomatch;
