@@ -19,6 +19,11 @@
 #include "global/global_context.h"
 #include "include/compat.h"
 
+//Yuanguo: add log <<<<<<<<<<<<<<<<<<<
+#include "osd/ReplicatedPG.h"
+#include "osd/osd_types.h"
+//Yuanguo: finished adding log  >>>>>>>>>>>>>>
+
 CLS_VER(1,0)
 CLS_NAME(rgw)
 
@@ -568,13 +573,17 @@ int rgw_bucket_check_index(cls_method_context_t hctx, bufferlist *in, bufferlist
 
 static int write_bucket_header(cls_method_context_t hctx, struct rgw_bucket_dir_header *header)
 {
-  CLS_LOG(1, "YuanguoDbg: write_bucket_header, header=[%llu %llu %llu %s]\n", (unsigned long long)header->tag_timeout, (unsigned long long)header->ver, (unsigned long long)header->master_ver, header->max_marker.c_str());
+  //Yuanguo: add log <<<<<<<<<<<<<<<<<<<
+  ReplicatedPG::OpContext **pctx = (ReplicatedPG::OpContext **)hctx;
+  string oname = (*pctx)->new_obs.oi.soid.oid.name;
+  CLS_LOG(1, "YuanguoDbg: write_bucket_header, %s header=[%llu %llu %llu %s]\n", oname.c_str(), (unsigned long long)header->tag_timeout, (unsigned long long)header->ver, (unsigned long long)header->master_ver, header->max_marker.c_str());
   for(map<uint8_t, rgw_bucket_category_stats>::const_iterator itr=header->stats.begin(); itr!=header->stats.end(); ++itr)
   {
     CLS_LOG(1, "YuanguoDbg: write_bucket_header, %u => rgw_bucket_category_stats[%llu %llu %llu]\n", 
         (unsigned)itr->first, 
         (unsigned long long)itr->second.total_size, (unsigned long long)itr->second.total_size_rounded, (unsigned long long)itr->second.num_entries);
   }
+  //Yuanguo: finished adding log  >>>>>>>>>>>>>>
 
   header->ver++;
 
@@ -709,7 +718,12 @@ int rgw_bucket_prepare_op(cls_method_context_t hctx, bufferlist *in, bufferlist 
     return rc;
   }
 
-  CLS_LOG(1, "YuanguoDbg: rgw_bucket_prepare_op, rc=%d header=[%llu %llu %llu %s]\n", rc, (unsigned long long)header.tag_timeout, (unsigned long long)header.ver, (unsigned long long)header.master_ver, header.max_marker.c_str());
+  //Yuanguo: add log <<<<<<<<<<<<<<<<<<<
+  ReplicatedPG::OpContext **pctx = (ReplicatedPG::OpContext **)hctx;
+  string oname = (*pctx)->new_obs.oi.soid.oid.name;
+  CLS_LOG(1, "YuanguoDbg: rgw_bucket_prepare_op, rc=%d, %s header=[%llu %llu %llu %s]\n", rc, oname.c_str(), (unsigned long long)header.tag_timeout, (unsigned long long)header.ver, (unsigned long long)header.master_ver, header.max_marker.c_str());
+  //Yuanguo: finished adding log  >>>>>>>>>>>>>>
+
 
   if (op.log_op) {
     CLS_LOG(1, "YuanguoDbg: rgw_bucket_prepare_op, log_index_operation\n");
@@ -844,7 +858,11 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
     return -EINVAL;
   }
 
-  CLS_LOG(1, "YuanguoDbg: rgw_bucket_complete_op, rc=%d header=[%llu %llu %llu %s]\n", rc, (unsigned long long)header.tag_timeout, (unsigned long long)header.ver, (unsigned long long)header.master_ver, header.max_marker.c_str());
+  //Yuanguo: add log <<<<<<<<<<<<<<<<<<<
+  ReplicatedPG::OpContext **pctx = (ReplicatedPG::OpContext **)hctx;
+  string oname = (*pctx)->new_obs.oi.soid.oid.name;
+  CLS_LOG(1, "YuanguoDbg: rgw_bucket_complete_op, rc=%d, %s header=[%llu %llu %llu %s]\n", rc, oname.c_str(), (unsigned long long)header.tag_timeout, (unsigned long long)header.ver, (unsigned long long)header.master_ver, header.max_marker.c_str());
+  //Yuanguo: finished adding log  >>>>>>>>>>>>>>
 
   struct rgw_bucket_dir_entry entry;
   bool ondisk = true;
