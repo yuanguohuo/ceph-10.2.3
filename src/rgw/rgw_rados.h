@@ -1865,8 +1865,13 @@ protected:
   
   RGWCoroutinesManagerRegistry *cr_registry;
 
+  //Yuanguo: zonegroup was put into pool ".rgw.root" by admin by command "radosgw-admin zonegroup create ..."
   RGWZoneGroup zonegroup;
+
+  //Yuanguo: the zone described by zone_params;
   RGWZone zone_public_config; /* external zone params, e.g., entrypoints, log flags, etc. */  
+
+  //Yuanguo: zone_params was put into pool ".rgw.root" by admin by command "radosgw-admin zone create ..."
   RGWZoneParams zone_params; /* internal zone params, e.g., rados pools */
   uint32_t zone_short_id;
 
@@ -1917,6 +1922,7 @@ public:
 
   string host_id;
 
+  //Yuanguo: realm was put into pool ".rgw.root" by admin by command "radosgw-admin realm create ..."
   RGWRealm realm;
 
   RGWRESTConn *rest_master_conn;

@@ -1531,6 +1531,8 @@ const string& RGWZoneParams::get_pool_name(CephContext *cct)
     return RGW_DEFAULT_ZONE_ROOT_POOL;
   }
 
+  //Yuanguo: we have configuration: 
+  //     rgw_zone_root_pool = ".rgw.root"
   return cct->_conf->rgw_zone_root_pool;
 }
 
@@ -1563,6 +1565,10 @@ int RGWZoneParams::init(CephContext *cct, RGWRados *store, bool setup_obj, bool 
     name = cct->_conf->rgw_zone;
   }
 
+  //Yuanguo: read object with name like zone_info.7827069b-ca9f-4009-9cf4-3cadff194c67
+  //         from pool ".rgw.root" (see RGWZoneParams::get_pool_name()),
+  //         and decode the info that's read to "*this";
+  //         That object was put into pool ".rgw.root" by admin by command "radosgw-admin zone create ..."
   return RGWSystemMetaObj::init(cct, store, setup_obj, old_format);
 }
 
@@ -2773,7 +2779,7 @@ class RGWRadosThread {
 
   public:
     Worker(CephContext *_cct, RGWRadosThread *_p) : cct(_cct), processor(_p), lock("RGWRadosThread::Worker") {}
-    void *entry();
+    void *entry();  //Yuanguo: thread body, call processor->process periodically.
     void stop() {
       Mutex::Locker l(lock);
       cond.Signal();
@@ -3608,6 +3614,9 @@ int RGWRados::init_zg_from_local(bool *creating_defaults)
  */
 int RGWRados::init_complete()
 {
+  //Yuanguo: realm was put into pool ".rgw.root" by admin by command "radosgw-admin realm create ..."
+  //   read it from that pool and decode into realm;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, init realm ..." << dendl;
   int ret = realm.init(cct, this);
   if (ret < 0 && ret != -ENOENT) {
     ldout(cct, 0) << "failed reading realm info: ret "<< ret << " " << cpp_strerror(-ret) << dendl;
@@ -3622,6 +3631,11 @@ int RGWRados::init_complete()
     ldout(cct, 20) << "current period " << current_period.get_id() << dendl;  
   }
 
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, realm.name           = " << realm.name.c_str()           << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, realm.id             = " << realm.id.c_str()             << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, realm.current_period = " << realm.current_period.c_str() << dendl;
+
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, init zonegroup ..." << dendl;
   ret = replace_region_with_zonegroup();
   if (ret < 0) {
     lderr(cct) << "failed converting region to zonegroup : ret "<< ret << " " << cpp_strerror(-ret) << dendl;
@@ -3653,17 +3667,69 @@ int RGWRados::init_complete()
     }
   }
 
+  for (list<string>::const_iterator citr=zonegroup.endpoints.begin(); citr!=zonegroup.endpoints.end(); ++citr)
+  {
+    ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.endpoints: " << citr->c_str() << dendl;
+  }
+  for (map<string, RGWZone>::const_iterator citr=zonegroup.zones.begin(); citr!=zonegroup.zones.end(); ++citr)
+  {
+    ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.zones: " << citr->first.c_str() << " => [" << citr->second.id.c_str() << "," << citr->second.name.c_str() << ", " << citr->second.bucket_index_max_shards << "]" << dendl;
+  }
+  for (list<string>::const_iterator citr=zonegroup.placement_targets.begin(); citr!=zonegroup.placement_targets.end(); ++citr)
+  {
+    ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.placement_targets: " << citr->first.c_str() << " => [" << citr->second.name.c_str() << "]" << dendl;
+  }
+  for (list<string>::const_iterator citr=zonegroup.hostnames.begin(); citr!=zonegroup.hostnames.end(); ++citr)
+  {
+    ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.hostnames: " << citr->c_str() << dendl;
+  }
+  for (list<string>::const_iterator citr=zonegroup.hostnames_s3website.begin(); citr!=zonegroup.hostnames_s3website.end(); ++citr)
+  {
+    ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.hostnames_s3website: " << citr->c_str() << dendl;
+  }
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.name              = " << zonegroup.name.c_str()              << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.id                = " << zonegroup.id.c_str()                << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.api_name          = " << zonegroup.api_name.c_str()          << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.is_master         = " << zonegroup.is_master                 << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.master_zone       = " << zonegroup.master_zone.c_str()       << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.default_placement = " << zonegroup.default_placement.c_str() << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.realm_id          = " << zonegroup.realm_id.c_str()          << dendl;
+
   ldout(cct, 10) << "Cannot find current period zone using local zone" << dendl;
   if (creating_defaults && cct->_conf->rgw_zone.empty()) {
     ldout(cct, 10) << " Using default name "<< default_zone_name << dendl;
     zone_params.set_name(default_zone_name);
   }
 
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, init zone ..." << dendl;
+  //Yuanguo: zone_params was put into pool ".rgw.root" by admin by command "radosgw-admin zone create ..."
+  // read it from that pool and decode into zone_params;
   ret = zone_params.init(cct, this);
   if (ret < 0 && ret != -ENOENT) {
     lderr(cct) << "failed reading zone info: ret "<< ret << " " << cpp_strerror(-ret) << dendl;
     return ret;
   }
+
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.name            = " << zone_params.name.c_str()    << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.id              = " << zone_params.id.c_str()      << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.domain_root     = " << zone_params.domain_root     << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.metadata_heap   = " << zone_params.metadata_heap   << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.control_pool    = " << zone_params.control_pool    << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.gc_pool         = " << zone_params.gc_pool         << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.log_pool        = " << zone_params.log_pool        << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.intent_log_pool = " << zone_params.intent_log_pool << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.usage_log_pool  = " << zone_params.usage_log_pool  << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.user_keys_pool  = " << zone_params.user_keys_pool  << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.user_email_pool = " << zone_params.user_email_pool << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.user_swift_pool = " << zone_params.user_swift_pool << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.user_uid_pool   = " << zone_params.user_uid_pool   << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.system_key      = [" << zone_params.system_key.id.c_str() << ":" << zone_params.system_key.key.c_str() << "]" << dendl;
+  for(map<string, RGWZonePlacementInfo>::const_iterator citr=zone_params.placement_pools.begin(); citr!=zone_params.placement_pools.end(); ++citr)
+  {
+    ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.placement_pools: " << citr->first.c_str() << " => [" << citr->second.index_pool.c_str() << ", " << citr->second.data_pool.c_str() << ", " << citr->second.data_extra_pool.c_str() << "]" << dend;
+  }
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.realm_id = " << zone_params.realm_id.c_str() << dendl;
+
   map<string, RGWZone>::iterator zone_iter = get_zonegroup().zones.find(zone_params.get_id());
   if (zone_iter == get_zonegroup().zones.end()) {
     if (using_local) {
@@ -3677,6 +3743,7 @@ int RGWRados::init_complete()
     }
     zone_iter = get_zonegroup().zones.find(zone_params.get_id());
   }
+
   if (zone_iter != get_zonegroup().zones.end()) {
     zone_public_config = zone_iter->second;
     ldout(cct, 20) << "zone " << zone_params.get_name() << dendl;
@@ -3715,6 +3782,15 @@ int RGWRados::init_complete()
         ldout(cct, 20) << "generating connection object for zone " << z.name << " id " << z.id << dendl;
         RGWRESTConn *conn = new RGWRESTConn(cct, this, z.id, z.endpoints);
         zone_conn_map[id] = conn;
+
+        ldout(cct, 99) << "YuanguoDbg: conn->remote_id       = " << conn->remote_id.c_str()       << dendl;
+        ldout(cct, 99) << "YuanguoDbg: conn->self_zone_group = " << conn->self_zone_group.c_str() << dendl;
+        ldout(cct, 99) << "YuanguoDbg: conn->counter         = " << conn->self_zone_group.c_str() << dendl;
+        ldout(cct, 99) << "YuanguoDbg: conn->key             = [" << conn->key.id.c_str() << ", " << conn->key.key.c_str() << ", " << conn->key.subuser.c_str() << "]" << dendl;
+        for(vector<string>::const_iterator citr=conn->endpoints.begin(); citr!=conn->endpoints.end(); ++citr)
+        {
+          ldout(cct, 99) << "YuanguoDbg: conn->endpoints: " << citr->c_str() << dendl;
+        }
       } else {
         ldout(cct, 0) << "WARNING: can't generate connection for zone " << z.id << " id " << z.name << ": no endpoints defined" << dendl;
       }
@@ -3766,9 +3842,9 @@ int RGWRados::init_complete()
   //      RGWAsyncRemoveObj             <-- delete an obj from ceph cluster;
   //      RGWAsyncStatObj               <-- get obj-state from ceph cluster;
   //into its queue, and these requests will be handled (sent) asynchronousely.
-  //These threads will use it:
-  //     RGWMetaSyncProcessorThread
-  //     RGWDataSyncProcessorThread
+  //'async_rados' will be used by:
+  //      RGWMetaSyncProcessorThread
+  //      RGWDataSyncProcessorThread
   async_rados = new RGWAsyncRadosProcessor(this, cct->_conf->rgw_num_async_rados_threads);
   async_rados->start();
 
@@ -3780,6 +3856,7 @@ int RGWRados::init_complete()
   }
 
   if (is_meta_master()) {
+    ldout(cct, 99) << "YuanguoDbg: create and start meta_notifier because current zonegroup is master!" << dendl;
     auto md_log = meta_mgr->get_log(current_period.get_id());
     meta_notifier = new RGWMetaNotifier(this, md_log);
     meta_notifier->start();
