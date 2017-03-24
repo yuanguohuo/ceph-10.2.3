@@ -3631,9 +3631,9 @@ int RGWRados::init_complete()
     ldout(cct, 20) << "current period " << current_period.get_id() << dendl;  
   }
 
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, realm.name           = " << realm.name.c_str()           << dendl;
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, realm.id             = " << realm.id.c_str()             << dendl;
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, realm.current_period = " << realm.current_period.c_str() << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, realm.name           = " << realm.get_name().c_str()           << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, realm.id             = " << realm.get_id().c_str()             << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, realm.current_period = " << realm.get_current_period().c_str() << dendl;
 
   ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, init zonegroup ..." << dendl;
   ret = replace_region_with_zonegroup();
@@ -3675,7 +3675,7 @@ int RGWRados::init_complete()
   {
     ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.zones: " << citr->first.c_str() << " => [" << citr->second.id.c_str() << "," << citr->second.name.c_str() << ", " << citr->second.bucket_index_max_shards << "]" << dendl;
   }
-  for (list<string>::const_iterator citr=zonegroup.placement_targets.begin(); citr!=zonegroup.placement_targets.end(); ++citr)
+  for (map<string, RGWZoneGroupPlacementTarget>::const_iterator citr=zonegroup.placement_targets.begin(); citr!=zonegroup.placement_targets.end(); ++citr)
   {
     ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.placement_targets: " << citr->first.c_str() << " => [" << citr->second.name.c_str() << "]" << dendl;
   }
@@ -3687,8 +3687,8 @@ int RGWRados::init_complete()
   {
     ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.hostnames_s3website: " << citr->c_str() << dendl;
   }
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.name              = " << zonegroup.name.c_str()              << dendl;
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.id                = " << zonegroup.id.c_str()                << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.name              = " << zonegroup.get_name().c_str()        << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.id                = " << zonegroup.get_id().c_str()          << dendl;
   ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.api_name          = " << zonegroup.api_name.c_str()          << dendl;
   ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.is_master         = " << zonegroup.is_master                 << dendl;
   ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zonegroup.master_zone       = " << zonegroup.master_zone.c_str()       << dendl;
@@ -3710,23 +3710,23 @@ int RGWRados::init_complete()
     return ret;
   }
 
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.name            = " << zone_params.name.c_str()    << dendl;
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.id              = " << zone_params.id.c_str()      << dendl;
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.domain_root     = " << zone_params.domain_root     << dendl;
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.metadata_heap   = " << zone_params.metadata_heap   << dendl;
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.control_pool    = " << zone_params.control_pool    << dendl;
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.gc_pool         = " << zone_params.gc_pool         << dendl;
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.log_pool        = " << zone_params.log_pool        << dendl;
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.intent_log_pool = " << zone_params.intent_log_pool << dendl;
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.usage_log_pool  = " << zone_params.usage_log_pool  << dendl;
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.user_keys_pool  = " << zone_params.user_keys_pool  << dendl;
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.user_email_pool = " << zone_params.user_email_pool << dendl;
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.user_swift_pool = " << zone_params.user_swift_pool << dendl;
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.user_uid_pool   = " << zone_params.user_uid_pool   << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.name            = " << zone_params.get_name().c_str() << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.id              = " << zone_params.get_id().c_str()   << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.domain_root     = " << zone_params.domain_root        << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.metadata_heap   = " << zone_params.metadata_heap      << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.control_pool    = " << zone_params.control_pool       << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.gc_pool         = " << zone_params.gc_pool            << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.log_pool        = " << zone_params.log_pool           << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.intent_log_pool = " << zone_params.intent_log_pool    << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.usage_log_pool  = " << zone_params.usage_log_pool     << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.user_keys_pool  = " << zone_params.user_keys_pool     << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.user_email_pool = " << zone_params.user_email_pool    << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.user_swift_pool = " << zone_params.user_swift_pool    << dendl;
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.user_uid_pool   = " << zone_params.user_uid_pool      << dendl;
   ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.system_key      = [" << zone_params.system_key.id.c_str() << ":" << zone_params.system_key.key.c_str() << "]" << dendl;
   for(map<string, RGWZonePlacementInfo>::const_iterator citr=zone_params.placement_pools.begin(); citr!=zone_params.placement_pools.end(); ++citr)
   {
-    ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.placement_pools: " << citr->first.c_str() << " => [" << citr->second.index_pool.c_str() << ", " << citr->second.data_pool.c_str() << ", " << citr->second.data_extra_pool.c_str() << "]" << dend;
+    ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.placement_pools: " << citr->first.c_str() << " => [" << citr->second.index_pool.c_str() << ", " << citr->second.data_pool.c_str() << ", " << citr->second.data_extra_pool.c_str() << "]" << dendl;
   }
   ldout(cct, 99) << "YuanguoDbg: RGWRados::init_complete, zone_params.realm_id = " << zone_params.realm_id.c_str() << dendl;
 
@@ -3783,11 +3783,10 @@ int RGWRados::init_complete()
         RGWRESTConn *conn = new RGWRESTConn(cct, this, z.id, z.endpoints);
         zone_conn_map[id] = conn;
 
-        ldout(cct, 99) << "YuanguoDbg: conn->remote_id       = " << conn->remote_id.c_str()       << dendl;
-        ldout(cct, 99) << "YuanguoDbg: conn->self_zone_group = " << conn->self_zone_group.c_str() << dendl;
-        ldout(cct, 99) << "YuanguoDbg: conn->counter         = " << conn->self_zone_group.c_str() << dendl;
-        ldout(cct, 99) << "YuanguoDbg: conn->key             = [" << conn->key.id.c_str() << ", " << conn->key.key.c_str() << ", " << conn->key.subuser.c_str() << "]" << dendl;
-        for(vector<string>::const_iterator citr=conn->endpoints.begin(); citr!=conn->endpoints.end(); ++citr)
+        ldout(cct, 99) << "YuanguoDbg: conn->remote_id       = " << conn->get_remote_id().c_str()       << dendl;
+        ldout(cct, 99) << "YuanguoDbg: conn->self_zone_group = " << conn->get_self_zonegroup().c_str() << dendl;
+        ldout(cct, 99) << "YuanguoDbg: conn->key             = [" << conn->get_key().id.c_str() << ", " << conn->get_key().key.c_str() << ", " << conn->get_key().subuser.c_str() << "]" << dendl;
+        for(list<string>::const_iterator citr=z.endpoints.begin(); citr!=z.endpoints.end(); ++citr)
         {
           ldout(cct, 99) << "YuanguoDbg: conn->endpoints: " << citr->c_str() << dendl;
         }
