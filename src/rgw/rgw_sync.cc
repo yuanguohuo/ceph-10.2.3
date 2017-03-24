@@ -81,20 +81,28 @@ void RGWSyncBackoff::backoff(RGWCoroutine *op)
 }
 
 int RGWBackoffControlCR::operate() {
+
+  ldout(cct, 99) << "YuanguoDbg: RGWBackoffControlCR::operate, Enter" << dendl;
+
   RGWCoroutine *finisher_cr;
   reenter(this) {
     while (true) {
       yield {
         Mutex::Locker l(lock);
+        ldout(cct, 99) << "YuanguoDbg: RGWBackoffControlCR::operate, alloc and call coroutine" << dendl;
         cr = alloc_cr();
         cr->get();
         call(cr);
       }
+
+      ldout(cct, 99) << "YuanguoDbg: RGWBackoffControlCR::operate, after alloc and call finisher coroutine" << dendl;
+
       {
         Mutex::Locker l(lock);
         cr->put();
         cr = NULL;
       }
+
       if (retcode < 0 && retcode != -EBUSY && retcode != -EAGAIN) {
         ldout(cct, 0) << "ERROR: RGWBackoffControlCR called coroutine returned " << retcode << dendl;
         if (exit_on_error) {
@@ -104,7 +112,11 @@ int RGWBackoffControlCR::operate() {
       if (reset_backoff) {
         backoff.reset();
       }
+
+      ldout(cct, 99) << "YuanguoDbg: RGWBackoffControlCR::operate, backoff" << dendl;
       yield backoff.backoff(this);
+
+      ldout(cct, 99) << "YuanguoDbg: RGWBackoffControlCR::operate, alloc and call finisher coroutine" << dendl;
       finisher_cr = alloc_finisher_cr();
       if (finisher_cr) {
         yield call(finisher_cr);

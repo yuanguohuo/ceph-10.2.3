@@ -191,9 +191,13 @@ int RGWAsyncUnlockSystemObj::_send_request()
     return r;
   }
 
+  ldout(store->ctx(), 99) << "Yuanguo: RGWAsyncUnlockSystemObj::_send_request, succeeded to open pool: " << obj.bucket.name << dendl;
+
   rados::cls::lock::Lock l(lock_name);
 
   l.set_cookie(cookie);
+
+  ldout(store->ctx(), 99) << "Yuanguo: RGWAsyncLockSystemObj::_send_request, unlock " << obj.get_object() << dendl;
 
   return l.unlock(&ioctx, obj.get_object());
 }

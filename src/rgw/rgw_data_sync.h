@@ -221,7 +221,7 @@ class RGWDataSyncStatusManager {
   RGWRados *store;
   librados::IoCtx ioctx;
 
-  string source_zone;
+  string source_zone; //Yuanguo: id of source/remote zone;
   RGWRESTConn *conn;
   RGWSyncErrorLogger *error_logger;
 

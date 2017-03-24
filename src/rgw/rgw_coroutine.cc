@@ -492,8 +492,9 @@ int RGWCoroutinesManager::run(list<RGWCoroutinesStack *>& stacks)
     } else if (stack->is_done()) {
       ldout(cct, 20) << __func__ << ":" << " stack=" << (void *)stack << " is done" << dendl;
       RGWCoroutinesStack *s;
+      //Yuanguo: I am done, check the stacks that has been blocked by me;
       while (stack->unblock_stack(&s)) {
-	if (!s->is_blocked_by_stack() && !s->is_done()) {
+	if (!s->is_blocked_by_stack() && !s->is_done()) { //Yuanguo: {s is not blocked by any stack (besides me there may be other blocker)} AND {s is not done}
 	  if (s->is_io_blocked()) {
             if (stack->is_interval_waiting()) {
               interval_wait_count++;

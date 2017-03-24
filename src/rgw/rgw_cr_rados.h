@@ -182,7 +182,7 @@ class RGWSimpleRadosReadCR : public RGWSimpleCoroutine {
 
   map<string, bufferlist> *pattrs;
 
-  T *result;
+  T *result; //Yuanguo: where to save the result of this coroutine;
 
   RGWAsyncGetSystemObj *req;
 
