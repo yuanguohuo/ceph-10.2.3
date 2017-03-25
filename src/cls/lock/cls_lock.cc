@@ -31,6 +31,10 @@
 
 #include "include/compat.h"
 
+//Yuanguo: add log <<<<<<<<<<<<<<<<<<<
+#include "osd/ReplicatedPG.h"
+#include "osd/osd_types.h"
+//Yuanguo: finished adding log  >>>>>>>>>>>>>>
 
 using namespace rados::cls::lock;
 
@@ -144,7 +148,7 @@ static int write_lock(cls_method_context_t hctx, const string& name, const lock_
  * helper function to add a lock and update disk state.
  *
  * Input:
- * @param name Lock name
+ * @param name Lock name   Yuanguo: it's a xattr key;
  * @param lock_type Type of lock (exclusive / shared)
  * @param duration Duration of lock (in seconds). Zero means it doesn't expire.
  * @param flags lock flags
@@ -178,6 +182,24 @@ static int lock_obj(cls_method_context_t hctx,
 
   // see if there's already a locker
   int r = read_lock(hctx, name, &linfo);
+
+  CLS_LOG(99, "YuanguoDbg: lock_obj, read_lock returns r=%d", r);
+  CLS_LOG(99, "YuanguoDbg: lock_obj, linfo.lock_type=%d linfo.tag=%s", linfo.lock_type, linfo.tag.c_str());
+  bool has_any_locker = false;
+  for(map<locker_id_t, locker_info_t>::const_iterator citr=linfo.lockers.begin(); citr!=linfo.lockers.end(); ++citr)
+  {
+    has_any_locker = true;
+    ostringstream oss;
+    oss << citr->second.addr;
+    CLS_LOG(99, "YuanguoDbg: lock_obj, linfo.lockers: [%s.%lld, %s] => [%s, %llu, %s]", 
+        citr->first.locker.type_str(), citr->first.locker.num(), citr->first.cookie.c_str(), 
+        oss.str().c_str(), citr->second.expiration.to_msec(), citr->second.description.c_str());
+  }
+  if(!has_any_locker)
+  {
+    CLS_LOG(99, "YuanguoDbg: lock_obj, linfo.lockers: none");
+  }
+
   if (r < 0 && r != -ENOENT) {
     CLS_ERR("Could not read lock info: %s", cpp_strerror(r).c_str());
     return r;
@@ -185,12 +207,15 @@ static int lock_obj(cls_method_context_t hctx,
   map<locker_id_t, locker_info_t>& lockers = linfo.lockers;
   map<locker_id_t, locker_info_t>::iterator iter;
 
+  //Yuanguo: construct id (locker_id_t) of current locker.
   locker_id_t id;
   id.cookie = cookie;
   entity_inst_t inst;
   r = cls_get_request_origin(hctx, &inst);
   id.locker = inst.name;
   assert(r == 0);
+
+  CLS_LOG(99, "YuanguoDbg: lock_obj, current locker: [%s.%lld, %s]", id.locker.type_str(), id.locker.num(), id.cookie.c_str());
 
   /* check this early, before we check fail_if_exists, otherwise we might
    * remove the locker entry and not check it later */
@@ -202,7 +227,7 @@ static int lock_obj(cls_method_context_t hctx,
   ClsLockType existing_lock_type = linfo.lock_type;
   CLS_LOG(20, "existing_lock_type=%s", cls_lock_type_str(existing_lock_type));
   iter = lockers.find(id);
-  if (iter != lockers.end()) {
+  if (iter != lockers.end()) {  //Yuanguo: current locker already held the lock;
     if (fail_if_exists) {
       return -EEXIST;
     } else {
@@ -210,17 +235,22 @@ static int lock_obj(cls_method_context_t hctx,
     }
   }
 
-  if (!lockers.empty()) {
+  if (!lockers.empty()) {  //Yuanguo: current locker was erased above, there are still other lockers!!!
+    //Yuanguo: since there're other lockers and current locker wants an exclusive lock, fail...
     if (exclusive) {
       CLS_LOG(20, "could not exclusive-lock object, already locked");
       return -EBUSY;
     }
 
+    //Yuanguo: current locker doesn't want an exclusive lock but cannot share the lock with others because 
+    //   the lock type is different, fail ...
     if (existing_lock_type != lock_type) {
       CLS_LOG(20, "cannot take lock on object, conflicting lock type");
       return -EBUSY;
     }
   }
+
+  //Yuanguo: there is no other locker, or current locker can share with other lockers...
 
   linfo.lock_type = lock_type;
   linfo.tag = tag;
@@ -232,7 +262,7 @@ static int lock_obj(cls_method_context_t hctx,
   }
   struct locker_info_t info(expiration, inst.addr, description);
 
-  linfo.lockers[id] = info;
+  linfo.lockers[id] = info;  //Yuanguo: record current locker;
 
   r = write_lock(hctx, name, linfo);
   if (r < 0)
@@ -262,6 +292,13 @@ static int lock_op(cls_method_context_t hctx,
     return -EINVAL;
   }
 
+  //Yuanguo: add log <<<<<<<<<<<<<<<<<<<
+  ReplicatedPG::OpContext **pctx = (ReplicatedPG::OpContext **)hctx;
+  string oname = (*pctx)->new_obs.oi.soid.oid.name;
+
+  CLS_LOG(99, "YuanguoDbg: lock_op, oname=%s op=[%s, %d, %s, %s, %s, %llu, %u]", oname.c_str(), op.name.c_str(), op.type, op.cookie.c_str(), op.tag.c_str(), op.description.c_str(), (unsigned long long)op.duration.to_msec(), (unsigned)op.flags);
+  //Yuanguo: finished adding log  >>>>>>>>>>>>>>
+
   return lock_obj(hctx,
                   op.name, op.type, op.duration, op.description,
                   op.flags, op.cookie, op.tag);
@@ -285,6 +322,24 @@ static int remove_lock(cls_method_context_t hctx,
   // get current lockers
   lock_info_t linfo;
   int r = read_lock(hctx, name, &linfo);
+
+  CLS_LOG(99, "YuanguoDbg: remove_lock, read_lock returns r=%d", r);
+  CLS_LOG(99, "YuanguoDbg: remove_lock, linfo.lock_type=%d linfo.tag=%s", linfo.lock_type, linfo.tag.c_str());
+  bool has_any_locker = false;
+  for(map<locker_id_t, locker_info_t>::const_iterator citr=linfo.lockers.begin(); citr!=linfo.lockers.end(); ++citr)
+  {
+    has_any_locker = true;
+    ostringstream oss;
+    oss << citr->second.addr;
+    CLS_LOG(99, "YuanguoDbg: remove_lock, linfo.lockers: [%s.%lld, %s] => [%s, %llu, %s]", 
+        citr->first.locker.type_str(), citr->first.locker.num(), citr->first.cookie.c_str(), 
+        oss.str().c_str(), citr->second.expiration.to_msec(), citr->second.description.c_str());
+  }
+  if(!has_any_locker)
+  {
+    CLS_LOG(99, "YuanguoDbg: remove_lock, linfo.lockers: none")
+  }
+
   if (r < 0) {
     CLS_ERR("Could not read list of current lockers off disk: %s", cpp_strerror(r).c_str());
     return r;
@@ -292,6 +347,8 @@ static int remove_lock(cls_method_context_t hctx,
 
   map<locker_id_t, locker_info_t>& lockers = linfo.lockers;
   struct locker_id_t id(locker, cookie);
+
+  CLS_LOG(99, "YuanguoDbg: remove_lock, current locker: [%s.%lld, %s]", id.locker.type_str(), id.locker.num(), id.cookie.c_str());
 
   // remove named locker from set
   map<locker_id_t, locker_info_t>::iterator iter = lockers.find(id);
@@ -330,6 +387,17 @@ static int unlock_op(cls_method_context_t hctx,
   entity_inst_t inst;
   int r = cls_get_request_origin(hctx, &inst);
   assert(r == 0);
+
+  //Yuanguo: add log <<<<<<<<<<<<<<<<<<<
+  ReplicatedPG::OpContext **pctx = (ReplicatedPG::OpContext **)hctx;
+  string oname = (*pctx)->new_obs.oi.soid.oid.name;
+
+  CLS_LOG(99, "YuanguoDbg: unlock_op, oname=%s op=[%s, %s] inst.name=[%s.%lld]", 
+      oname.c_str(), 
+      op.name.c_str(), op.cookie.c_str(),
+      inst.name.type_str(), inst.name.num());
+  //Yuanguo: finished adding log  >>>>>>>>>>>>>>
+
   return remove_lock(hctx, op.name, inst.name, op.cookie);
 }
 
