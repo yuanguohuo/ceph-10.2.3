@@ -291,7 +291,9 @@ int RGWCoroutinesStack::unwind(int retcode)
   return 0;
 }
 
-
+//Yuanguo: collect the ret status of spawned stacks (of op or current stack). 
+//    if any one of spwaned stack has status < 0,  *ret < 0;
+//    else, all spawned stacks have status >=0,    *ret = 0;
 bool RGWCoroutinesStack::collect(RGWCoroutine *op, int *ret, RGWCoroutinesStack *skip_stack) /* returns true if needs to be called again */
 {
   rgw_spawned_stacks *s = (op ? &op->spawned : &spawned);

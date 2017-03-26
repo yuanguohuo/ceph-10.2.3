@@ -129,6 +129,13 @@ public:
   int handle_data(rgw_data_sync_info& data);
 };
 
+//Yuanguo: parent class (RGWSimpleRadosReadCR) will read sync_status.sync_info from local ceph 
+//    cluster first (pool:log pool, oid: "datalog.sync-status" + {source zone id})
+//    And then call this handle_data() func passing sync_status.sync_info as the argument "data".
+//    see 
+//        RGWSimpleRadosReadCR::send_request
+//    and
+//        RGWSimpleRadosReadCR::request_complete
 int RGWReadDataSyncStatusCoroutine::handle_data(rgw_data_sync_info& data)
 {
   if (retcode == -ENOENT) {
@@ -138,6 +145,7 @@ int RGWReadDataSyncStatusCoroutine::handle_data(rgw_data_sync_info& data)
   map<uint32_t, rgw_data_sync_marker>& markers = sync_status->sync_markers;
   RGWRados *store = sync_env->store;
   for (int i = 0; i < (int)data.num_shards; i++) {
+    ldout(cct, 99) << "YuanguoDbg: RGWReadDataSyncStatusCoroutine::handle_data, read from pool:" <<tore->get_zone_params().log_pool << ", object:" << RGWDataSyncStatusManager::shard_obj_name(sync_env->source_zone, i) << dendl;
     spawn(new RGWSimpleRadosReadCR<rgw_data_sync_marker>(sync_env->async_rados, store, store->get_zone_params().log_pool,
                                                     RGWDataSyncStatusManager::shard_obj_name(sync_env->source_zone, i), &markers[i]), true);
   }
@@ -172,6 +180,12 @@ public:
       yield {
 	char buf[16];
 	snprintf(buf, sizeof(buf), "%d", shard_id);
+
+        //Yuanguo: URI=/admin/log?type=data&id=shard_id&info
+        //    it will be handled at remote side by RGWOp_DATALog_ShardInfo. See: 
+        //         RGWOp_DATALog_ShardInfo::execute  -->
+        //         RGWDataChangesLog::get_info   -->
+        //         store->time_log_info, get "data_log.{shard_id}" from log pool;
         rgw_http_param_pair pairs[] = { { "type" , "data" },
 	                                { "id", buf },
 					{ "info" , NULL },
@@ -413,7 +427,7 @@ class RGWInitDataSyncStatusCoroutine : public RGWCoroutine {
 
   RGWRados *store;
 
-  string sync_status_oid;
+  string sync_status_oid; //Yuanguo: "datalog.sync-status." + {source_zone}
 
   string lock_name;
   string cookie;
@@ -432,6 +446,7 @@ public:
     gen_rand_alphanumeric(cct, buf, sizeof(buf) - 1);
     string cookie = buf;
 
+    //Yuanguo: "datalog.sync-status." + {source_zone}
     sync_status_oid = RGWDataSyncStatusManager::sync_status_oid(sync_env->source_zone);
   }
 
@@ -453,12 +468,14 @@ public:
 
 	    ldout(cct, 99) << "YuanguoDbg: RGWInitDataSyncStatusCoroutine::operate, succeeded to take a lock on" << sync_status_oid << dendl;
 
+      //Yuanguo: recreate the object. Why? maybe because this is initialization (class name: RGWInitDataSyncStatusCoroutine). 
+      //   And status.state should be StateInit this time, it will be changed to StateBuildingFullSyncMaps later.
       yield {
         call(new RGWSimpleRadosWriteCR<rgw_data_sync_info>(sync_env->async_rados, store, store->get_zone_params().log_pool,
 				 sync_status_oid, status));
       }
 
-	    ldout(cct, 99) << "YuanguoDbg: RGWInitDataSyncStatusCoroutine::operate, wrote " << sync_status_oid << dendl;
+	    ldout(cct, 99) << "YuanguoDbg: RGWInitDataSyncStatusCoroutine::operate, recreate " << sync_status_oid << " in pool " << store->get_zone_params().log_pool << dendl;
 
       yield { /* take lock again, we just recreated the object */
 	uint32_t lock_duration = 30;
@@ -479,17 +496,16 @@ public:
           ldout(cct, 0) << "ERROR: connection to zone " << sync_env->source_zone << " does not exist!" << dendl;
           return set_cr_error(-EIO);
         }
+
+        //Yuanguo: get "data_log.0", "data_log.1", "data_log.2", ... from remote side;
         for (int i = 0; i < (int)status.num_shards; i++) {
           spawn(new RGWReadRemoteDataLogShardInfoCR(sync_env, i, &shards_info[i]), true);
 	}
       }
 
-	    ldout(cct, 99) << "YuanguoDbg: RGWInitDataSyncStatusCoroutine::operate, got shards info" << dendl;
-      for(map<int, RGWDataChangesLogInfo>::const_iterator citr=shards_info.begin(); citr!=shards_info.end(); ++citr)
-      {
-        ldout(cct, 99) << "YuanguoDbg: RGWInitDataSyncStatusCoroutine::operate, shards_info: " << citr->first << " => [" << citr->second.marker << "]" << dendl;
-      }
-
+      //Yuanguo: collect ret status of current coroutine's spawned stacks (RGWReadRemoteDataLogShardInfoCR above), 
+      //    see  RGWCoroutine::collect() -->
+      //         RGWCoroutinesStack::collect();
       while (collect(&ret, NULL)) {
 	if (ret < 0) {
 	  return set_state(RGWCoroutine_Error);
@@ -497,6 +513,11 @@ public:
         yield;
       }
 
+	    ldout(cct, 99) << "YuanguoDbg: RGWInitDataSyncStatusCoroutine::operate, got shards info" << dendl;
+      for(map<int, RGWDataChangesLogInfo>::const_iterator citr=shards_info.begin(); citr!=shards_info.end(); ++citr)
+      {
+        ldout(cct, 99) << "YuanguoDbg: RGWInitDataSyncStatusCoroutine::operate, shards_info: " << citr->first << " => [" << citr->second.marker << "]" << dendl;
+      }
 
       yield {
         for (int i = 0; i < (int)status.num_shards; i++) {
@@ -507,14 +528,21 @@ public:
           marker.timestamp = info.last_update;
 
 	        ldout(cct, 99) << "YuanguoDbg: RGWInitDataSyncStatusCoroutine::operate, write shards_info: [" << info.marker << "]" << dendl;
-
+          //Yuanguo: write the data log shard info just got from remote side into log pool of local ceph cluster with name:
+          //            "datalog.sync-status.shard" + {source_zone} + {shard_id}. 
+          //
+          //   Remote                           Local
+          // data_log.0      ====>    "datalog.sync-status.shard.{remote-zone-id}.0"
+          // data_log.1      ====>    "datalog.sync-status.shard.{remote-zone-id}.1"
+          // data_log.2      ====>    "datalog.sync-status.shard.{remote-zone-id}.2"
+          // ......
           spawn(new RGWSimpleRadosWriteCR<rgw_data_sync_marker>(sync_env->async_rados, store, store->get_zone_params().log_pool,
 				                          RGWDataSyncStatusManager::shard_obj_name(sync_env->source_zone, i), marker), true);
         }
       }
 
-      ldout(cct, 99) << "YuanguoDbg: RGWInitDataSyncStatusCoroutine::operate, build full sync map" << dendl;
-
+      //Yuanguo: change status.state to StateBuildingFullSyncMaps.
+      ldout(cct, 99) << "YuanguoDbg: RGWInitDataSyncStatusCoroutine::operate, change status.state from StateInit to StateBuildingFullSyncMaps" << dendl;
       yield {
 	status.state = rgw_data_sync_info::StateBuildingFullSyncMaps;
         call(new RGWSimpleRadosWriteCR<rgw_data_sync_info>(sync_env->async_rados, store, store->get_zone_params().log_pool,
@@ -522,8 +550,8 @@ public:
       }
 
 
+      //Yuanguo: unlock
       ldout(cct, 99) << "YuanguoDbg: RGWInitDataSyncStatusCoroutine::operate, unlock " << sync_status_oid << dendl;
-
       yield { /* unlock */
 	call(new RGWSimpleRadosUnlockCR(sync_env->async_rados, store, store->get_zone_params().log_pool, sync_status_oid,
 			             lock_name, cookie));
@@ -531,12 +559,14 @@ public:
 
       ldout(cct, 99) << "YuanguoDbg: RGWInitDataSyncStatusCoroutine::operate, after unlock " << sync_status_oid << dendl;
 
+      //Yuanguo: collect ret status of current coroutine's spawned stacks (RGWSimpleRadosWriteCR above), 
       while (collect(&ret, NULL)) {
 	if (ret < 0) {
 	  return set_state(RGWCoroutine_Error);
 	}
         yield;
       }
+
       drain_all();
       return set_cr_done();
     }
@@ -1431,6 +1461,14 @@ public:
         *reset_backoff = true;
       }
 
+
+      ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncCR::operate, After init, sync_status.sync_info=[" << sync_status.sync_info.state << ", " << sync_status.sync_info.num_shards << "]" << dendl;
+      for(map<uint32_t, rgw_data_sync_marker>::const_iterator citr=sync_status.sync_markers.begin(); citr!=sync_status.sync_markers.end(); ++citr)
+      {
+        ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncCR::operate, After init, sync_status.sync_markers: " << citr->first << " => [" << citr->second.state << ", " << citr->second.marker << ", " << citr->second.next_step_marker << ", " << citr->second.total_entries << ", " << citr->second.pos << "]" << dendl;
+      }
+
+
       if  ((rgw_data_sync_info::SyncState)sync_status.sync_info.state == rgw_data_sync_info::StateBuildingFullSyncMaps) {
         /* state: building full sync maps */
         ldout(sync_env->cct, 20) << __func__ << "(): building full sync maps" << dendl;
@@ -1446,6 +1484,14 @@ public:
 
         *reset_backoff = true;
       }
+
+
+      ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncCR::operate, After building full sync map, sync_status.sync_info=[" << sync_status.sync_info.state << ", " << sync_status.sync_info.num_shards << "]" << dendl;
+      for(map<uint32_t, rgw_data_sync_marker>::const_iterator citr=sync_status.sync_markers.begin(); citr!=sync_status.sync_markers.end(); ++citr)
+      {
+        ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncCR::operate, After building full sync map, sync_status.sync_markers: " << citr->first << " => [" << citr->second.state << ", " << citr->second.marker << ", " << citr->second.next_step_marker << ", " << citr->second.total_entries << ", " << citr->second.pos << "]" << dendl;
+      }
+
 
       yield {
         if  ((rgw_data_sync_info::SyncState)sync_status.sync_info.state == rgw_data_sync_info::StateSync) {
@@ -1532,7 +1578,7 @@ int RGWRemoteDataLog::run_sync(int num_shards, rgw_data_sync_status& sync_status
 {
   ldout(store->ctx(), 99) << "YuanguoDbg: RGWRemoteDataLog::run_sync num_shards=" << num_shards << dendl;
 
-  //Yuanguo: read sth about source_zone from rados (osd cluster). 
+  //Yuanguo: read data sync status about source_zone from rados (osd cluster). 
   int r = run(new RGWReadDataSyncStatusCoroutine(&sync_env, &sync_status));
   if (r < 0 && r != -ENOENT) {
     ldout(store->ctx(), 0) << "ERROR: failed to read sync status from source_zone=" << sync_env.source_zone << " r=" << r << dendl;
@@ -1580,7 +1626,11 @@ int RGWDataSyncStatusManager::init()
     return r;
   }
 
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWDataSyncStatusManager::init, succeeded to open log pool: " << store->get_zone_params().log_pool.name << dendl;
+
   source_status_obj = rgw_obj(store->get_zone_params().log_pool, RGWDataSyncStatusManager::sync_status_oid(source_zone));
+
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWDataSyncStatusManager::init, source_status_obj=" << source_status_obj << dendl;
 
   error_logger = new RGWSyncErrorLogger(store, RGW_SYNC_ERROR_LOG_SHARD_PREFIX, ERROR_LOGGER_SHARDS);
 
@@ -1603,10 +1653,11 @@ int RGWDataSyncStatusManager::init()
   }
 
   num_shards = datalog_info.num_shards;
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWDataSyncStatusManager::init, num_shards=" << num_shards << dendl;
 
   for (int i = 0; i < num_shards; i++) {
-    ldout(store->ctx(), 99) << "YuanguoDbg: RGWDataSyncStatusManager::init, create rgw_obj, bucket=" << store->get_zone_params().log_pool << " source_zone=" << source_zone << " i=" << i << " obj=" << shard_obj_name(source_zone, i) << dendl;
     shard_objs[i] = rgw_obj(store->get_zone_params().log_pool, shard_obj_name(source_zone, i));
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWDataSyncStatusManager::init, shard_objs[" << i << "]=" << shard_objs[i] << dendl;
   }
 
   return 0;
