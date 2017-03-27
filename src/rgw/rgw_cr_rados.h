@@ -516,7 +516,9 @@ class RGWOmapAppend : public RGWConsumerCR<string> {
   RGWAsyncRadosProcessor *async_rados;
   RGWRados *store;
 
+  //Yuanguo: {zone}.rgw.log
   rgw_bucket pool;
+  //Yuanguo:  data.full-sync.index.{remote-zone-id}.X
   string oid;
 
   bool going_down;
@@ -624,9 +626,11 @@ class RGWShardedOmapCRManager {
 public:
   RGWShardedOmapCRManager(RGWAsyncRadosProcessor *_async_rados, RGWRados *_store, RGWCoroutine *_op, int _num_shards, rgw_bucket& pool, const string& oid_prefix)
                       : async_rados(_async_rados),
-		        store(_store), op(_op), num_shards(_num_shards) {
+		        store(_store), op(_op), num_shards(_num_shards) 
+  {
     shards.reserve(num_shards);
     for (int i = 0; i < num_shards; ++i) {
+      //Yuanguo:  data.full-sync.index.{remote-zone-id}.X
       char buf[oid_prefix.size() + 16];
       snprintf(buf, sizeof(buf), "%s.%d", oid_prefix.c_str(), i);
       RGWOmapAppend *shard = new RGWOmapAppend(async_rados, store, pool, buf);

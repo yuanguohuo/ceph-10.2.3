@@ -1767,6 +1767,9 @@ public:
   string get_type() { return "bucket"; }
 
   int get(RGWRados *store, string& entry, RGWMetadataObject **obj) {
+
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWBucketMetadataHandler::get Enter, entry=" << entry << dendl;
+
     RGWObjVersionTracker ot;
     RGWBucketEntryPoint be;
 
@@ -1881,6 +1884,7 @@ public:
   }
 
   int list_keys_next(void *handle, int max, list<string>& keys, bool *truncated) {
+
     list_keys_info *info = static_cast<list_keys_info *>(handle);
 
     string no_filter;
@@ -1888,6 +1892,8 @@ public:
     keys.clear();
 
     RGWRados *store = info->store;
+
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWBucketMetadataHandler::list_keys_next Enter" << dendl;
 
     list<string> unfiltered_keys;
 
@@ -1926,6 +1932,9 @@ public:
   string get_type() { return "bucket.instance"; }
 
   int get(RGWRados *store, string& oid, RGWMetadataObject **obj) {
+
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWBucketInstanceMetadataHandler::get Enter, oid=" << oid << dendl;
+
     RGWBucketCompleteInfo bci;
 
     real_time mtime;
@@ -2048,6 +2057,7 @@ public:
   }
 
   int list_keys_next(void *handle, int max, list<string>& keys, bool *truncated) {
+
     list_keys_info *info = static_cast<list_keys_info *>(handle);
 
     string no_filter;
@@ -2055,6 +2065,8 @@ public:
     keys.clear();
 
     RGWRados *store = info->store;
+
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWBucketInstanceMetadataHandler::list_keys_next Enter" << dendl;
 
     list<string> unfiltered_keys;
 

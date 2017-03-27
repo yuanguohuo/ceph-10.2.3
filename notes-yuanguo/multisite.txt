@@ -623,3 +623,49 @@ user.rgw.acl
   000000a0  00 00 00 31 5f 31 34 38  39 39 37 39 33 39 32 2e  |...1_1489979392.|
   000000b0  35 34 31 35 35 39 5f 38  39 2e 31                 |541559_89.1|
   000000bb
+
+
+
+
+====================
+RGWDataSyncCR:
+1.  RGWReadDataSyncStatusCoroutine
+
+  1.1 read local ceph cluster (RGWReadDataSyncStatusCoroutine)
+            pool: {zone}.rgw.log    
+            obj: datalog.sync-status.{remote-zone-id}
+      to get 'state' and 'num_shards', and save into
+      sync_status.sync_info (see parent class RGWSimpleRadosReadCR)
+
+  1.2 for each shard X, read local ceph cluster, 
+            pool: {zone}.rgw.log
+            obj: datalog.sync-status.shard.{remote-zone-id}.X
+      to get state(full or increment sync), marker, next_step_marker,
+      timestamp ... and save into sync_status->sync_markers[X]
+
+
+2 (if 'state' got in 1.1 is StateInit), RGWInitDataSyncStatusCoroutine
+
+  2.1  lock datalog.sync-status.{remote-zone-id}  (the same obj in step 1.1)
+  2.2  recreate datalog.sync-status.{remote-zone-id}  
+  2.3  lock it again
+
+  2.4  for each shard X, read remote ceph cluster
+            pool: {remote-zone}.rgw.log 
+            obj:  data_log.X
+       and save into shards_info[X]
+
+  2.5  for each shard X, save shards_info[X] to local ceph cluster,
+            pool: {zone}.rgw.log 
+            obj: datalog.sync-status.shard.{remote-zone-id}.X
+       Notice: See step 1.2, they are the same objs.
+
+  2.6  change  sync_status.sync_info.state to StateBuildingFullSyncMaps, and
+       save into local ceph cluster:
+            pool: {zone}.rgw.log
+            obj: datalog.sync-status.{remote-zone-id}
+       Notice: See step 1.1, it's the same obj. Now, we are changing the state.
+
+  2.7  unlock datalog.sync-status.{remote-zone-id}  (the same obj in step 1.1, 2.1)
+
+3 (if 'state' got in 1.1 is StateBuildingFullSyncMaps), RGWListBucketIndexesCR 

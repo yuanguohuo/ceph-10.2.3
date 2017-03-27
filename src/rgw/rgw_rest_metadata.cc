@@ -52,6 +52,8 @@ void RGWOp_Metadata_Get::execute() {
 
   frame_metadata_key(s, metadata_key);
 
+  dout(99) << "YuanguoDbg: RGWOp_Metadata_Get::execute, metadata_key=" << metadata_key.c_str() << dendl;
+
   /* Get keys */
   http_ret = store->meta_mgr->get(metadata_key, s->formatter);
   if (http_ret < 0) {
@@ -70,6 +72,9 @@ void RGWOp_Metadata_List::execute() {
   string metadata_key;
 
   frame_metadata_key(s, metadata_key);
+
+  dout(99) << "YuanguoDbg: RGWOp_Metadata_List::execute, metadata_key=" << metadata_key.c_str() << dendl;
+
   /* List keys */
   void *handle;
   int max = 1000;
@@ -93,8 +98,10 @@ void RGWOp_Metadata_List::execute() {
       return;
     }
 
-    for (list<string>::iterator iter = keys.begin(); iter != keys.end();
-	 ++iter) {
+    dout(99) << "YuanguoDbg: RGWOp_Metadata_List::execute, keys: " << dendl;
+    for (list<string>::iterator iter = keys.begin(); iter != keys.end(); ++iter) 
+    {
+      dout(99) << "YuanguoDbg: RGWOp_Metadata_List::execute, key: " << iter->c_str() << dendl;
       s->formatter->dump_string("key", *iter);
     }
 

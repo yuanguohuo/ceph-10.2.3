@@ -557,6 +557,8 @@ int RGWMetadataManager::get(string& metadata_key, Formatter *f)
     return ret;
   }
 
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWMetadataManager::get, metadata_key=" << metadata_key.c_str() << " handler=" << typeid(*handler).name() << dendl;
+
   RGWMetadataObject *obj;
 
   ret = handler->get(store, entry, &obj);
@@ -699,6 +701,8 @@ int RGWMetadataManager::list_keys_init(string& section, void **handle)
   if (ret < 0) {
     return -ENOENT;
   }
+
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWMetadataManager::list_keys_init, section=" << section.c_str() << " handler=" << typeid(*handler).name() << dendl;
 
   list_keys_handle *h = new list_keys_handle;
   h->handler = handler;

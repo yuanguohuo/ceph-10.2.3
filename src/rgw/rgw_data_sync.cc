@@ -145,7 +145,7 @@ int RGWReadDataSyncStatusCoroutine::handle_data(rgw_data_sync_info& data)
   map<uint32_t, rgw_data_sync_marker>& markers = sync_status->sync_markers;
   RGWRados *store = sync_env->store;
   for (int i = 0; i < (int)data.num_shards; i++) {
-    ldout(cct, 99) << "YuanguoDbg: RGWReadDataSyncStatusCoroutine::handle_data, read from pool:" <<tore->get_zone_params().log_pool << ", object:" << RGWDataSyncStatusManager::shard_obj_name(sync_env->source_zone, i) << dendl;
+    ldout(cct, 99) << "YuanguoDbg: RGWReadDataSyncStatusCoroutine::handle_data, read from pool:" << store->get_zone_params().log_pool << ", object:" << RGWDataSyncStatusManager::shard_obj_name(sync_env->source_zone, i) << dendl;
     spawn(new RGWSimpleRadosReadCR<rgw_data_sync_marker>(sync_env->async_rados, store, store->get_zone_params().log_pool,
                                                     RGWDataSyncStatusManager::shard_obj_name(sync_env->source_zone, i), &markers[i]), true);
   }
@@ -468,8 +468,8 @@ public:
 
 	    ldout(cct, 99) << "YuanguoDbg: RGWInitDataSyncStatusCoroutine::operate, succeeded to take a lock on" << sync_status_oid << dendl;
 
-      //Yuanguo: recreate the object. Why? maybe because this is initialization (class name: RGWInitDataSyncStatusCoroutine). 
-      //   And status.state should be StateInit this time, it will be changed to StateBuildingFullSyncMaps later.
+      //Yuanguo: recreate the object. Why? maybe because this is initialization (the class name is RGWInitDataSyncStatusCoroutine). 
+      //   status.state should be StateInit this time, it will be changed to StateBuildingFullSyncMaps later.
       yield {
         call(new RGWSimpleRadosWriteCR<rgw_data_sync_info>(sync_env->async_rados, store, store->get_zone_params().log_pool,
 				 sync_status_oid, status));
@@ -497,7 +497,7 @@ public:
           return set_cr_error(-EIO);
         }
 
-        //Yuanguo: get "data_log.0", "data_log.1", "data_log.2", ... from remote side;
+        //Yuanguo: get "data_log.0", "data_log.1", ... from remote side, save into shards_info[0], shards_info[1], ...
         for (int i = 0; i < (int)status.num_shards; i++) {
           spawn(new RGWReadRemoteDataLogShardInfoCR(sync_env, i, &shards_info[i]), true);
 	}
@@ -716,6 +716,7 @@ class RGWListBucketIndexesCR : public RGWCoroutine {
 
   RGWShardedOmapCRManager *entries_index;
 
+  //Yuanguo:  data.full-sync.index.{remote-zone-id}
   string oid_prefix;
 
   string path;
@@ -730,79 +731,126 @@ public:
   RGWListBucketIndexesCR(RGWDataSyncEnv *_sync_env,
                          rgw_data_sync_status *_sync_status) : RGWCoroutine(_sync_env->cct), sync_env(_sync_env),
                                                       store(sync_env->store), sync_status(_sync_status),
-						      req_ret(0), ret(0), entries_index(NULL), i(0), failed(false) {
+						      req_ret(0), ret(0), entries_index(NULL), i(0), failed(false) 
+  {
+    //Yuanguo:  data.full-sync.index.{remote-zone-id}
     oid_prefix = datalog_sync_full_sync_index_prefix + "." + sync_env->source_zone; 
     path = "/admin/metadata/bucket.instance";
     num_shards = sync_status->sync_info.num_shards;
   }
+
   ~RGWListBucketIndexesCR() {
     delete entries_index;
   }
 
   int operate() {
     reenter(this) {
+
+      ldout(sync_env->cct, 99) << "YuanguoDbg: RGWListBucketIndexesCR::operate, Enter, num_shards=" << num_shards << dendl;
+
       entries_index = new RGWShardedOmapCRManager(sync_env->async_rados, store, this, num_shards,
-						  store->get_zone_params().log_pool,
-                                                  oid_prefix);
+						  store->get_zone_params().log_pool, oid_prefix);
+
+      ldout(sync_env->cct, 99) << "YuanguoDbg: RGWListBucketIndexesCR::operate, list bucket instances" << dendl;
       yield {
+        //Yuanguo: since there is no querying-string "key", this request will be processed at remote 
+        //side by RGWOp_Metadata_List, which will list bucket instances from 
+        //    pool: {zone}.rgw.data.root
+        //    objs: 
+        //          .bucket.meta.{bucket-name-A}:{remote-zone-id}.4133.1
+        //          .bucket.meta.{bucket-name-B}:{remote-zone-id}.4139.2
+        //          .bucket.meta.{bucket-name-C}:{remote-zone-id}.4138.3
+        //          ...
         string entrypoint = string("/admin/metadata/bucket.instance");
         /* FIXME: need a better scaling solution here, requires streaming output */
-        call(new RGWReadRESTResourceCR<list<string> >(store->ctx(), sync_env->conn, sync_env->http_manager,
-                                                      entrypoint, NULL, &result));
+        call(new RGWReadRESTResourceCR<list<string> >(store->ctx(), sync_env->conn, sync_env->http_manager, entrypoint, NULL, &result));
       }
-      if (get_ret_status() < 0) {
+
+      if (get_ret_status() < 0) 
+      {
         ldout(sync_env->cct, 0) << "ERROR: failed to fetch metadata for section bucket.index" << dendl;
         return set_state(RGWCoroutine_Error);
       }
-      for (iter = result.begin(); iter != result.end(); ++iter) {
-        ldout(sync_env->cct, 20) << "list metadata: section=bucket.index key=" << *iter << dendl;
 
+      for (iter = result.begin(); iter != result.end(); ++iter) 
+      {
+        ldout(sync_env->cct, 20) << "list metadata: section=bucket.index key=" << *iter << dendl;
         key = *iter;
+        ldout(sync_env->cct, 99) << "YuanguoDbg: RGWListBucketIndexesCR::operate, get bucket instance: " << *iter << dendl;
 
         yield {
-          rgw_http_param_pair pairs[] = { { "key", key.c_str() },
-                                          { NULL, NULL } };
-
+          rgw_http_param_pair pairs[] = { { "key", key.c_str() }, { NULL, NULL } };
+          //Yuanguo: since there is querying-string "key=xx", this request will be processed at remote 
+          //side by RGWOp_Metadata_Get, which will get a specific bucket instance from 
+          //    pool: {zone}.rgw.data.root
+          //    obj:  .bucket.meta.{bucket-name-B}:{remote-zone-id}.4139.2
           call(new RGWReadRESTResourceCR<bucket_instance_meta_info>(store->ctx(), sync_env->conn, sync_env->http_manager, path, pairs, &meta_info));
         }
 
         num_shards = meta_info.data.get_bucket_info().num_shards;
-        if (num_shards > 0) {
-          for (i = 0; i < num_shards; i++) {
+
+        ldout(sync_env->cct, 99) << "YuanguoDbg: RGWListBucketIndexesCR::operate, got bucket instance: " << meta_info.data.get_bucket_info().bucket << " num_shards=" << num_shards << dendl;
+
+        if (num_shards > 0) 
+        {
+          for (i = 0; i < num_shards; i++) 
+          {
             char buf[16];
             snprintf(buf, sizeof(buf), ":%d", i);
             s = key + buf;
+
+            ldout(sync_env->cct, 99) << "YuanguoDbg: RGWListBucketIndexesCR::operate, entry=" << s << " shard_id=" << store->data_log->get_log_shard_id(meta_info.data.get_bucket_info().bucket, i) << dendl;
+
             yield entries_index->append(s, store->data_log->get_log_shard_id(meta_info.data.get_bucket_info().bucket, i));
           }
-        } else {
+        } 
+        else 
+        {
           yield entries_index->append(key, store->data_log->get_log_shard_id(meta_info.data.get_bucket_info().bucket, -1));
         }
       }
+
       yield {
         if (!entries_index->finish()) {
           failed = true;
         }
       }
-      if (!failed) {
-        for (map<uint32_t, rgw_data_sync_marker>::iterator iter = sync_status->sync_markers.begin(); iter != sync_status->sync_markers.end(); ++iter) {
+
+      ldout(sync_env->cct, 99) << "YuanguoDbg: RGWListBucketIndexesCR::operate, failed=" << failed << dendl;
+
+      if (!failed) 
+      {
+        for (map<uint32_t, rgw_data_sync_marker>::iterator iter = sync_status->sync_markers.begin(); iter != sync_status->sync_markers.end(); ++iter) 
+        {
           int shard_id = (int)iter->first;
           rgw_data_sync_marker& marker = iter->second;
           marker.total_entries = entries_index->get_total_entries(shard_id);
+
+          ldout(sync_env->cct, 99) << "YuanguoDbg: RGWListBucketIndexesCR::operate, update total_entries of shard " << shard_id << dendl;
+          //Yuanguo: update total_entries in local ceph cluster:
+          //   pool: {zone}.rgw.log
+          //   obj : datalog.sync-status.shard.{remote-zone-id}.X
           spawn(new RGWSimpleRadosWriteCR<rgw_data_sync_marker>(sync_env->async_rados, store, store->get_zone_params().log_pool,
                                                                 RGWDataSyncStatusManager::shard_obj_name(sync_env->source_zone, shard_id), marker), true);
         }
-      } else {
+      } 
+      else 
+      {
           yield call(sync_env->error_logger->log_error_cr(sync_env->conn->get_remote_id(), "data.init", "",
                                                           EIO, string("failed to build bucket instances map")));
       }
-      while (collect(&ret, NULL)) {
-	if (ret < 0) {
+
+      while (collect(&ret, NULL)) 
+      {
+        if (ret < 0) 
+        {
           yield call(sync_env->error_logger->log_error_cr(sync_env->conn->get_remote_id(), "data.init", "",
-                                                          -ret, string("failed to store sync status: ") + cpp_strerror(-ret)));
-	  req_ret = ret;
-	}
+                -ret, string("failed to store sync status: ") + cpp_strerror(-ret)));
+          req_ret = ret;
+        }
         yield;
       }
+
       drain_all();
       if (req_ret < 0) {
         yield return set_cr_error(req_ret);
@@ -1425,6 +1473,7 @@ public:
 
       ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncCR::operate, Enter" << dendl;
       /* read sync status */
+      //Yuanguo: read data sync status about source_zone from ceph cluster.
       yield call(new RGWReadDataSyncStatusCoroutine(sync_env, &sync_status));
 
       if (retcode == -ENOENT) {
@@ -1434,10 +1483,10 @@ public:
         return set_cr_error(retcode);
       }
 
-      ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncCR::operate sync_status.sync_info=[" << sync_status.sync_info.state << ", " << sync_status.sync_info.num_shards << "]" << dendl;
+      ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncCR::operate, Before init, sync_status.sync_info=[" << sync_status.sync_info.state << ", " << sync_status.sync_info.num_shards << "]" << dendl;
       for(map<uint32_t, rgw_data_sync_marker>::const_iterator citr=sync_status.sync_markers.begin(); citr!=sync_status.sync_markers.end(); ++citr)
       {
-        ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncCR::operate sync_status.sync_markers: " << citr->first << " => [" << citr->second.state << ", " << citr->second.marker << ", " << citr->second.next_step_marker << ", " << citr->second.total_entries << ", " << citr->second.pos << "]" << dendl;
+        ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncCR::operate, Before init, sync_status.sync_markers: " << citr->first << " => [" << citr->second.state << ", " << citr->second.marker << ", " << citr->second.next_step_marker << ", " << citr->second.total_entries << ", " << citr->second.pos << "]" << dendl;
       }
 
       /* state: init status */
@@ -1578,7 +1627,7 @@ int RGWRemoteDataLog::run_sync(int num_shards, rgw_data_sync_status& sync_status
 {
   ldout(store->ctx(), 99) << "YuanguoDbg: RGWRemoteDataLog::run_sync num_shards=" << num_shards << dendl;
 
-  //Yuanguo: read data sync status about source_zone from rados (osd cluster). 
+  //Yuanguo: read data sync status about source_zone from ceph cluster.
   int r = run(new RGWReadDataSyncStatusCoroutine(&sync_env, &sync_status));
   if (r < 0 && r != -ENOENT) {
     ldout(store->ctx(), 0) << "ERROR: failed to read sync status from source_zone=" << sync_env.source_zone << " r=" << r << dendl;

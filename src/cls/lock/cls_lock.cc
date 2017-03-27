@@ -191,7 +191,7 @@ static int lock_obj(cls_method_context_t hctx,
     has_any_locker = true;
     ostringstream oss;
     oss << citr->second.addr;
-    CLS_LOG(99, "YuanguoDbg: lock_obj, linfo.lockers: [%s.%lld, %s] => [%s, %llu, %s]", 
+    CLS_LOG(99, "YuanguoDbg: lock_obj, linfo.lockers: [%s.%ld, %s] => [%s, %ld, %s]", 
         citr->first.locker.type_str(), citr->first.locker.num(), citr->first.cookie.c_str(), 
         oss.str().c_str(), citr->second.expiration.to_msec(), citr->second.description.c_str());
   }
@@ -215,7 +215,7 @@ static int lock_obj(cls_method_context_t hctx,
   id.locker = inst.name;
   assert(r == 0);
 
-  CLS_LOG(99, "YuanguoDbg: lock_obj, current locker: [%s.%lld, %s]", id.locker.type_str(), id.locker.num(), id.cookie.c_str());
+  CLS_LOG(99, "YuanguoDbg: lock_obj, current locker: [%s.%ld, %s]", id.locker.type_str(), id.locker.num(), id.cookie.c_str());
 
   /* check this early, before we check fail_if_exists, otherwise we might
    * remove the locker entry and not check it later */
@@ -331,13 +331,13 @@ static int remove_lock(cls_method_context_t hctx,
     has_any_locker = true;
     ostringstream oss;
     oss << citr->second.addr;
-    CLS_LOG(99, "YuanguoDbg: remove_lock, linfo.lockers: [%s.%lld, %s] => [%s, %llu, %s]", 
+    CLS_LOG(99, "YuanguoDbg: remove_lock, linfo.lockers: [%s.%ld, %s] => [%s, %lu, %s]", 
         citr->first.locker.type_str(), citr->first.locker.num(), citr->first.cookie.c_str(), 
         oss.str().c_str(), citr->second.expiration.to_msec(), citr->second.description.c_str());
   }
   if(!has_any_locker)
   {
-    CLS_LOG(99, "YuanguoDbg: remove_lock, linfo.lockers: none")
+    CLS_LOG(99, "YuanguoDbg: remove_lock, linfo.lockers: none");
   }
 
   if (r < 0) {
@@ -348,7 +348,7 @@ static int remove_lock(cls_method_context_t hctx,
   map<locker_id_t, locker_info_t>& lockers = linfo.lockers;
   struct locker_id_t id(locker, cookie);
 
-  CLS_LOG(99, "YuanguoDbg: remove_lock, current locker: [%s.%lld, %s]", id.locker.type_str(), id.locker.num(), id.cookie.c_str());
+  CLS_LOG(99, "YuanguoDbg: remove_lock, current locker: [%s.%ld, %s]", id.locker.type_str(), id.locker.num(), id.cookie.c_str());
 
   // remove named locker from set
   map<locker_id_t, locker_info_t>::iterator iter = lockers.find(id);
@@ -392,7 +392,7 @@ static int unlock_op(cls_method_context_t hctx,
   ReplicatedPG::OpContext **pctx = (ReplicatedPG::OpContext **)hctx;
   string oname = (*pctx)->new_obs.oi.soid.oid.name;
 
-  CLS_LOG(99, "YuanguoDbg: unlock_op, oname=%s op=[%s, %s] inst.name=[%s.%lld]", 
+  CLS_LOG(99, "YuanguoDbg: unlock_op, oname=%s op=[%s, %s] inst.name=[%s.%ld]", 
       oname.c_str(), 
       op.name.c_str(), op.cookie.c_str(),
       inst.name.type_str(), inst.name.num());

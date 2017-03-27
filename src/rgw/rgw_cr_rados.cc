@@ -419,7 +419,7 @@ int RGWOmapAppend::operate() {
       yield wait_for_product();
       yield {
         string entry;
-        while (consume(&entry)) {
+        while (consume(&entry)) { //Yuanguo: pop from RGWConsumerCR::product
           set_status() << "adding entry: " << entry;
           entries[entry] = bufferlist();
           if (entries.size() >= window_size) {
@@ -428,6 +428,10 @@ int RGWOmapAppend::operate() {
         }
         if (entries.size() >= window_size || going_down) {
           set_status() << "flushing to omap";
+
+          //Yuanguo: pool={zone}.rgw.log
+          //Yuanguo: oid=data.full-sync.index.{remote-zone-id}.X
+          //Yuanguo: omap has keys only (value is empty bufferlist) ???
           call(new RGWRadosSetOmapKeysCR(store, pool, oid, entries));
           entries.clear();
         }
@@ -443,11 +447,14 @@ int RGWOmapAppend::operate() {
   return 0;
 }
 
+//Yuanguo: put into RGWConsumerCR::product (then it can be consumed in RGWOmapAppend::operate)
 void RGWOmapAppend::flush_pending() {
   receive(pending_entries);
   num_pending_entries = 0;
 }
 
+//Yuanguo: put into pending list (RGWOmapAppend::pending_entries). If too many pending, flush to 
+//RGWConsumerCR::product (then it can be consumed in RGWOmapAppend::operate)
 bool RGWOmapAppend::append(const string& s) {
   if (is_done()) {
     return false;
