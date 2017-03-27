@@ -1365,6 +1365,11 @@ void rgw_data_change_log_entry::decode_json(JSONObj *obj) {
   JSONDecoder::decode_json("entry", entry, obj);
 }
 
+//Yuanguo: bs.shard_id is some kind of hash of object-name
+//         r is some kind of hash of bucket-name and bs.shard_id, 
+//         thus, r is some kind of hash of bucket-name and object-name 
+//         r is used as shard_id of data_log, whose number is configured 
+//         by "rgw_data_log_num_shards"
 int RGWDataChangesLog::choose_oid(const rgw_bucket_shard& bs) {
     const string& name = bs.bucket.name;
     int shard_shift = (bs.shard_id > 0 ? bs.shard_id : 0);

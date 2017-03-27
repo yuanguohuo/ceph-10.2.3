@@ -748,6 +748,17 @@ public:
 
       ldout(sync_env->cct, 99) << "YuanguoDbg: RGWListBucketIndexesCR::operate, Enter, num_shards=" << num_shards << dendl;
 
+      //Yuanguo: entries_index stands for the objs in local ceph cluster:
+      //            pool: {zone}.rgw.log 
+      //            objs: 
+      //                  data.full-sync.index.{remote-zone-id}.0
+      //                  data.full-sync.index.{remote-zone-id}.1
+      //                  ...
+      //                  data.full-sync.index.{remote-zone-id}.N     N = rgw_data_log_num_shards
+      //
+      //   entries_index->append(key, shard_id) is to set omap "key=>[]" to obj:
+      //                  data.full-sync.index.{remote-zone-id}.shard_id
+      //
       entries_index = new RGWShardedOmapCRManager(sync_env->async_rados, store, this, num_shards,
 						  store->get_zone_params().log_pool, oid_prefix);
 
@@ -791,6 +802,9 @@ public:
 
         ldout(sync_env->cct, 99) << "YuanguoDbg: RGWListBucketIndexesCR::operate, got bucket instance: " << meta_info.data.get_bucket_info().bucket << " num_shards=" << num_shards << dendl;
 
+
+        //Yuanguo: the num_shards here is "rgw_override_bucket_index_max_shards", rather than "rgw_data_log_num_shards" 
+        //     it's the num_shards fo the bucket !!!
         if (num_shards > 0) 
         {
           for (i = 0; i < num_shards; i++) 
@@ -801,6 +815,14 @@ public:
 
             ldout(sync_env->cct, 99) << "YuanguoDbg: RGWListBucketIndexesCR::operate, entry=" << s << " shard_id=" << store->data_log->get_log_shard_id(meta_info.data.get_bucket_info().bucket, i) << dendl;
 
+            //Yuanguo: i is the shard_id of the bucket.
+            //         store->data_log->get_log_shard_id(...) is the shard_id of data_log;
+            //         the append here is to add an omap key-value pair 
+            //            key  : s
+            //            value: empty
+            //         to object of local ceph cluster:
+            //            pool: {zone}.rgw.log 
+            //            obj :  data.full-sync.index.{remote-zone-id}.M    M = store->data_log->get_log_shard_id(...)
             yield entries_index->append(s, store->data_log->get_log_shard_id(meta_info.data.get_bucket_info().bucket, i));
           }
         } 
