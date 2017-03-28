@@ -1248,6 +1248,26 @@ public:
       ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncShardCR::full_sync, pool=" << pool << " oid=" << oid << " total_entries=" << total_entries << dendl;
 
       do {
+        //Yuanguo: oid = data.full-sync.index.{remote-zone-id}.X ( 0 <= X < rgw_data_log_num_shards ), what's its omap?
+        // The Answer (see RGWListBucketIndexesCR::operate):
+        //    bucket-0 has rgw_override_bucket_index_max_shards shards,
+        //    bucket-1 has rgw_override_bucket_index_max_shards shards,
+        //    ...
+        //    bucket-9 has rgw_override_bucket_index_max_shards shards.
+        //
+        // hash(bucket-N, shard_id)=X        the hash is function choose_oid() 
+        //       0 <= N <= 9     <------- all buckets
+        //       0 <= shard_id < rgw_override_bucket_index_max_shards  <------ all shards of all buckets
+        //       0 <= X < rgw_data_log_num_shards   <------- all shards of all buckets are sharded into [0, rgw_data_log_num_shards)
+        // then,  
+        //      key = genkey(bucket-N, shard_id)   <--- the key contains bucket-N and shard_id
+        //      val = empty
+        // is inserted into omap of data.full-sync.index.{remote-zone-id}.X 
+        //
+        // So, if we traverse all omaps of all data.full-sync.index.{remote-zone-id}.X(0 <= X < rgw_data_log_num_shards), we get
+        // all shards of all buckets.
+        //
+        // I saw the code at RGWListBucketIndexesCR::operate, but I didn't find the run-time log in my experiment. Why ???
         yield call(new RGWRadosGetOmapKeysCR(sync_env->store, pool, oid, sync_marker.marker, &entries, max_entries));
         if (retcode < 0) {
           ldout(sync_env->cct, 0) << "ERROR: " << __func__ << "(): RGWRadosGetOmapKeysCR() returned ret=" << retcode << dendl;
@@ -1837,6 +1857,8 @@ public:
   int operate() {
     reenter(this) {
       yield {
+        //Yuanguo: since type=bucket-index and info exists, this will be process at remote side by
+        //   RGWOp_BILog_Info
         rgw_http_param_pair pairs[] = { { "type" , "bucket-index" },
 	                                { "bucket-instance", instance_key.c_str() },
 					{ "info" , NULL },
@@ -1879,6 +1901,7 @@ public:
     gen_rand_alphanumeric(cct, buf, sizeof(buf) - 1);
     string cookie = buf;
 
+    //Yuanguo:  bucket.sync-status.{remote-zone-id}:{bucketname}:{bucket_id}:{shard_id}
     sync_status_oid = RGWBucketSyncStatusManager::status_oid(sync_env->source_zone, bs);
   }
 
@@ -1886,15 +1909,24 @@ public:
     reenter(this) {
       yield {
 	uint32_t lock_duration = 30;
+
+
 	call(new RGWSimpleRadosLockCR(sync_env->async_rados, store, store->get_zone_params().log_pool, sync_status_oid,
 			             lock_name, cookie, lock_duration));
 	if (retcode < 0) {
 	  ldout(cct, 0) << "ERROR: failed to take a lock on " << sync_status_oid << dendl;
 	  return set_cr_error(retcode);
 	}
+
+  ldout(cct, 99) << "YuanguoDbg: RGWInitBucketShardSyncStatusCoroutine::operate, succeeded to take a lock on " << sync_status_oid << dendl;
+
       }
+
+      //Yuanguo: recreate the obj;
       yield call(new RGWSimpleRadosWriteCR<rgw_bucket_shard_sync_info>(sync_env->async_rados, store, store->get_zone_params().log_pool,
 				 sync_status_oid, status));
+
+      //Yuanguo: take the lock again;
       yield { /* take lock again, we just recreated the object */
 	uint32_t lock_duration = 30;
 	call(new RGWSimpleRadosLockCR(sync_env->async_rados, store, store->get_zone_params().log_pool, sync_status_oid,
@@ -1904,6 +1936,8 @@ public:
 	  return set_cr_error(retcode);
 	}
       }
+
+
       /* fetch current position in logs */
       yield call(new RGWReadRemoteBucketIndexLogInfoCR(sync_env, bs, &info));
       if (retcode < 0 && retcode != -ENOENT) {
@@ -1981,6 +2015,14 @@ void rgw_bucket_shard_inc_sync_marker::encode_attr(map<string, bufferlist>& attr
 
 class RGWReadBucketSyncStatusCoroutine : public RGWCoroutine {
   RGWDataSyncEnv *sync_env;
+
+  //Yuanguo: bucket.sync-status.{remote-zone-id}:{bucketname}:{bucket_id}:{shard_id} in pool {zone}.rgw.log
+  //         it has attrs:
+  //                full_marker
+  //                inc_marker
+  //                lock.sync_lock
+  //                lock.sync_lock.incremental
+  //                state
   string oid;
   rgw_bucket_shard_sync_info *status;
 
@@ -2771,6 +2813,15 @@ int RGWBucketShardIncrementalSyncCR::operate()
 int RGWRunBucketSyncCoroutine::operate()
 {
   reenter(this) {
+    //Yuanguo: get xattrs from local ceph cluster:
+    //    pool: {zone}.rgw.log
+    //    obj : bucket.sync-status.{remote-zone-id}:{bucketname}:{bucket_id}:{shard_id}
+    //ret attrs:
+    //    full_marker
+    //    inc_marker
+    //    lock.sync_lock
+    //    lock.sync_lock.incremental
+    //    state
     yield call(new RGWReadBucketSyncStatusCoroutine(sync_env, bs, &sync_status));
     if (retcode < 0 && retcode != -ENOENT) {
       ldout(sync_env->cct, 0) << "ERROR: failed to read sync status for bucket="

@@ -465,6 +465,9 @@ void RGWOp_BILog_Info::execute() {
          bucket_instance = s->info.args.get("bucket-instance");
   RGWBucketInfo bucket_info;
 
+
+  dout(99) << "YuanguoDbg: RGWOp_BILog_Info::execute, bucket_instance=" << bucket_instance << " bucket_name=" << bucket_name << " tenant_name=" << tenant_name << dendl;
+
   RGWObjectCtx& obj_ctx = *static_cast<RGWObjectCtx *>(s->obj_ctx);
 
   if (bucket_name.empty() && bucket_instance.empty()) {
@@ -479,6 +482,8 @@ void RGWOp_BILog_Info::execute() {
     return;
   }
 
+  dout(99) << "YuanguoDbg: RGWOp_BILog_Info::execute, shard_id=" << shard_id << " bucket_instance=" << bucket_instance << dendl;
+
   if (!bucket_instance.empty()) {
     http_ret = store->get_bucket_instance_info(obj_ctx, bucket_instance, bucket_info, NULL, NULL);
     if (http_ret < 0) {
@@ -492,8 +497,18 @@ void RGWOp_BILog_Info::execute() {
       return;
     }
   }
+
+  dout(99) << "YuanguoDbg: RGWOp_BILog_Info::execute, get bucket stats, bucket_info.bucket=" << bucket_info.bucket << " shard_id=" << shard_id << dendl;
+
   map<RGWObjCategory, RGWStorageStats> stats;
   int ret =  store->get_bucket_stats(bucket_info.bucket, shard_id, &bucket_ver, &master_ver, stats, &max_marker);
+
+  dout(99) << "YuanguoDbg: RGWOp_BILog_Info::execute, got bucket stats, ret=" << ret << " stats.size=" << stats.size() << dendl;
+  for(map<RGWObjCategory, RGWStorageStats>::const_iterator citr=stats.begin(); citr!=stats.end(); ++citr)
+  {
+    dout(99) << "YuanguoDbg: RGWOp_BILog_Info::execute, got bucket stats: " << citr->first << " => [" << citr->second.category << ", " << citr->second.num_kb << ", " << citr->second.num_kb_rounded << ", " << citr->second.num_objects << "]" << dendl;
+  }
+
   if (ret < 0 && ret != -ENOENT) {
     http_ret = ret;
     return;

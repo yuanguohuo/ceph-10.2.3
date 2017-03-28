@@ -10581,11 +10581,20 @@ int RGWRados::raw_obj_stat(rgw_obj& obj, uint64_t *psize, real_time *pmtime, uin
 int RGWRados::get_bucket_stats(rgw_bucket& bucket, int shard_id, string *bucket_ver, string *master_ver,
     map<RGWObjCategory, RGWStorageStats>& stats, string *max_marker)
 {
+
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::get_bucket_stats, bucket=" << bucket << " shard_id=" << shard_id << dendl;
+
   map<string, rgw_bucket_dir_header> headers;
   map<int, string> bucket_instance_ids;
   int r = cls_bucket_head(bucket, shard_id, headers, &bucket_instance_ids);
   if (r < 0)
     return r;
+
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::get_bucket_stats, bucket_instance_ids.size=" << bucket_instance_ids.size() << dendl;
+  for(map<int, string>::const_iterator citr=bucket_instance_ids.begin(); citr!=bucket_instance_ids.end(); ++citr)
+  {
+    ldout(cct, 99) << "YuanguoDbg: RGWRados::get_bucket_stats, bucket_instance_ids: " << citr->first << " => " << citr->second << dendl;
+  }
 
   assert(headers.size() == bucket_instance_ids.size());
 
@@ -10597,6 +10606,9 @@ int RGWRados::get_bucket_stats(rgw_bucket& bucket, int shard_id, string *bucket_
   string shard_marker;
   char buf[64];
   for(; iter != headers.end(); ++iter, ++viter) {
+
+    ldout(cct, 99) << "YuanguoDbg: RGWRados::get_bucket_stats, headers: " << iter->first << " => [" << iter->second.tag_timeout << ", " << iter->second.ver << ", " << iter->second.master_ver << ", " << iter->second.max_marker << "]" << dendl;
+
     accumulate_raw_stats(iter->second, stats);
     snprintf(buf, sizeof(buf), "%lu", (unsigned long)iter->second.ver);
     ver_mgr.add(viter->first, string(buf));
@@ -10798,6 +10810,8 @@ int RGWRados::get_bucket_instance_info(RGWObjectCtx& obj_ctx, rgw_bucket& bucket
   } else {
     oid = bucket.oid;
   }
+
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::get_bucket_instance_info, oid=" << oid << dendl;
 
   return get_bucket_instance_from_oid(obj_ctx, oid, info, pmtime, pattrs);
 }
@@ -11929,6 +11943,8 @@ int RGWRados::check_disk_state(librados::IoCtx io_ctx,
 
 int RGWRados::cls_bucket_head(rgw_bucket& bucket, int shard_id, map<string, struct rgw_bucket_dir_header>& headers, map<int, string> *bucket_instance_ids)
 {
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_bucket_head, bucket=" << bucket << " shard_id=" << shard_id << dendl;
+
   librados::IoCtx index_ctx;
   map<int, string> oids;
   map<int, struct rgw_cls_list_ret> list_results;
@@ -11936,12 +11952,20 @@ int RGWRados::cls_bucket_head(rgw_bucket& bucket, int shard_id, map<string, stru
   if (r < 0)
     return r;
 
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_bucket_head, bucket_instance_ids->size=" << bucket_instance_ids->size() << dendl;
+  for(map<int, string>::const_iterator citr=bucket_instance_ids->begin(); citr!=bucket_instance_ids->end(); ++citr)
+  {
+    ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_bucket_head, bucket_instance_ids: " << citr->first << " => " << citr->second << dendl;
+  }
+
   r = CLSRGWIssueGetDirHeader(index_ctx, oids, list_results, cct->_conf->rgw_bucket_index_max_aio)();
   if (r < 0)
     return r;
 
+  ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_bucket_head, list_results.size=" << list_results.size() << dendl;
   map<int, struct rgw_cls_list_ret>::iterator iter = list_results.begin();
   for(; iter != list_results.end(); ++iter) {
+    ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_bucket_head, list_results: " << iter->first << " => " << "[" << "..." << "]" << dendl;
     headers[oids[iter->first]] = iter->second.dir.header;
   }
   return 0;
