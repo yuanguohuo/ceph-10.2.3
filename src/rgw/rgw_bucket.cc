@@ -1905,21 +1905,38 @@ public:
     int ret = store->list_raw_objects(store->get_zone_params().domain_root, no_filter,
                                       max, info->ctx, unfiltered_keys, truncated);
     if (ret < 0 && ret != -ENOENT)
+    {
+      ldout(store->ctx(), 99) << "YuanguoDbg: RGWBucketMetadataHandler::list_keys_next Error, ret=" << ret << dendl;
       return ret;
-    if (ret == -ENOENT) {
+    }
+    if (ret == -ENOENT) 
+    {
+      ldout(store->ctx(), 99) << "YuanguoDbg: RGWBucketMetadataHandler::list_keys_next -ENOENT" << dendl;
       if (truncated)
         *truncated = false;
       return 0;
     }
 
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWBucketMetadataHandler::list_keys_next unfiltered_keys.size=" << unfiltered_keys.size() << " max=" << max << " truncated=" << *truncated << dendl;
+
     // now filter out the system entries
     list<string>::iterator iter;
-    for (iter = unfiltered_keys.begin(); iter != unfiltered_keys.end(); ++iter) {
+    for (iter = unfiltered_keys.begin(); iter != unfiltered_keys.end(); ++iter) 
+    {
       string& k = *iter;
 
-      if (k[0] != '.') {
+      ldout(store->ctx(), 99) << "YuanguoDbg: RGWBucketMetadataHandler::list_keys_next k=" << k << dendl;
+
+      if (k[0] != '.') 
+      {
         keys.push_back(k);
       }
+    }
+
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWBucketInstanceMetadataHandler::list_keys_next keys.size=" << keys.size()<< dendl;
+    for(list<string>::const_iterator citr=keys.begin(); citr!=keys.end(); ++citr)
+    {
+      ldout(store->ctx(), 99) << "YuanguoDbg: RGWBucketInstanceMetadataHandler::list_keys_next keys:" << citr->c_str() << dendl;
     }
 
     return 0;
@@ -2078,24 +2095,41 @@ public:
     int ret = store->list_raw_objects(store->get_zone_params().domain_root, no_filter,
                                       max, info->ctx, unfiltered_keys, truncated);
     if (ret < 0 && ret != -ENOENT)
+    {
+      ldout(store->ctx(), 99) << "YuanguoDbg: RGWBucketInstanceMetadataHandler::list_keys_next Error, ret=" << ret << dendl;
       return ret;
-    if (ret == -ENOENT) {
+    }
+    if (ret == -ENOENT) 
+    {
+      ldout(store->ctx(), 99) << "YuanguoDbg: RGWBucketInstanceMetadataHandler::list_keys_next -ENOENT" << dendl;
       if (truncated)
         *truncated = false;
       return 0;
     }
 
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWBucketInstanceMetadataHandler::list_keys_next unfiltered_keys.size=" << unfiltered_keys.size() << " max=" << max << " truncated=" << *truncated << dendl;
+
     constexpr int prefix_size = sizeof(RGW_BUCKET_INSTANCE_MD_PREFIX) - 1;
     // now filter in the relevant entries
     list<string>::iterator iter;
-    for (iter = unfiltered_keys.begin(); iter != unfiltered_keys.end(); ++iter) {
+    for (iter = unfiltered_keys.begin(); iter != unfiltered_keys.end(); ++iter) 
+    {
       string& k = *iter;
 
-      if (k.compare(0, prefix_size, RGW_BUCKET_INSTANCE_MD_PREFIX) == 0) {
+      ldout(store->ctx(), 99) << "YuanguoDbg: RGWBucketInstanceMetadataHandler::list_keys_next k=" << k << dendl;
+
+      if (k.compare(0, prefix_size, RGW_BUCKET_INSTANCE_MD_PREFIX) == 0) 
+      {
         auto oid = k.substr(prefix_size);
         rgw_bucket_instance_oid_to_key(oid);
         keys.emplace_back(std::move(oid));
       }
+    }
+
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWBucketInstanceMetadataHandler::list_keys_next keys.size=" << keys.size()<< dendl;
+    for(list<string>::const_iterator citr=keys.begin(); citr!=keys.end(); ++citr)
+    {
+      ldout(store->ctx(), 99) << "YuanguoDbg: RGWBucketInstanceMetadataHandler::list_keys_next keys:" << citr->c_str() << dendl;
     }
 
     return 0;

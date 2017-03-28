@@ -73,7 +73,7 @@ void RGWOp_Metadata_List::execute() {
 
   frame_metadata_key(s, metadata_key);
 
-  dout(99) << "YuanguoDbg: RGWOp_Metadata_List::execute, metadata_key=" << metadata_key.c_str() << dendl;
+  dout(99) << "YuanguoDbg: RGWOp_Metadata_List::execute, metadata_key=" << metadata_key.c_str() << dendl; //Yuanguo: e.g. "bucket.instance"
 
   /* List keys */
   void *handle;

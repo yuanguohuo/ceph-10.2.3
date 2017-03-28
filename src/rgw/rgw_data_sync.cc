@@ -466,7 +466,7 @@ public:
 	}
       }
 
-	    ldout(cct, 99) << "YuanguoDbg: RGWInitDataSyncStatusCoroutine::operate, succeeded to take a lock on" << sync_status_oid << dendl;
+	    ldout(cct, 99) << "YuanguoDbg: RGWInitDataSyncStatusCoroutine::operate, succeeded to take a lock on " << sync_status_oid << dendl;
 
       //Yuanguo: recreate the object. Why? maybe because this is initialization (the class name is RGWInitDataSyncStatusCoroutine). 
       //   status.state should be StateInit this time, it will be changed to StateBuildingFullSyncMaps later.
@@ -1241,8 +1241,12 @@ public:
       }
       logger.log("full sync");
       oid = full_data_sync_index_shard_oid(sync_env->source_zone, shard_id);
+
       set_marker_tracker(new RGWDataSyncShardMarkerTrack(sync_env, status_oid, sync_marker));
       total_entries = sync_marker.pos;
+
+      ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncShardCR::full_sync, pool=" << pool << " oid=" << oid << " total_entries=" << total_entries << dendl;
+
       do {
         yield call(new RGWRadosGetOmapKeysCR(sync_env->store, pool, oid, sync_marker.marker, &entries, max_entries));
         if (retcode < 0) {
@@ -1251,6 +1255,16 @@ public:
           drain_all();
           return set_cr_error(retcode);
         }
+
+        ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncShardCR::full_sync, sync_marker=[" 
+          << sync_marker.state << ", " 
+          << sync_marker.marker << ", " 
+          << sync_marker.next_step_marker << ", " 
+          << sync_marker.total_entries << ", " 
+          << sync_marker.pos 
+          << "]" << dendl;
+
+
         iter = entries.begin();
         for (; iter != entries.end(); ++iter) {
           ldout(sync_env->cct, 20) << __func__ << ": full sync: " << iter->first << dendl;
@@ -1278,6 +1292,16 @@ public:
         sync_marker.state = rgw_data_sync_marker::IncrementalSync;
         sync_marker.marker = sync_marker.next_step_marker;
         sync_marker.next_step_marker.clear();
+
+        ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncShardCR::full_sync, update marker, sync_marker=[" 
+          << sync_marker.state << ", " 
+          << sync_marker.marker << ", " 
+          << sync_marker.next_step_marker << ", " 
+          << sync_marker.total_entries << ", " 
+          << sync_marker.pos 
+          << "]" << dendl;
+
+
         RGWRados *store = sync_env->store;
         call(new RGWSimpleRadosWriteCR<rgw_data_sync_marker>(sync_env->async_rados, store, store->get_zone_params().log_pool,
                                                              status_oid, sync_marker));
@@ -1565,11 +1589,20 @@ public:
 
 
       yield {
-        if  ((rgw_data_sync_info::SyncState)sync_status.sync_info.state == rgw_data_sync_info::StateSync) {
-          for (map<uint32_t, rgw_data_sync_marker>::iterator iter = sync_status.sync_markers.begin();
-               iter != sync_status.sync_markers.end(); ++iter) {
-            RGWDataSyncShardControlCR *cr = new RGWDataSyncShardControlCR(sync_env, sync_env->store->get_zone_params().log_pool,
-                                                                          iter->first, iter->second);
+        if((rgw_data_sync_info::SyncState)sync_status.sync_info.state == rgw_data_sync_info::StateSync) 
+        {
+          for (map<uint32_t, rgw_data_sync_marker>::iterator iter = sync_status.sync_markers.begin(); iter != sync_status.sync_markers.end(); ++iter) 
+          {
+            ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncCR::operate, new RGWDataSyncShardControlCR: " << iter->first 
+              << " => [" 
+              << iter->second.state << ", " 
+              << iter->second.marker << ", " 
+              << iter->second.next_step_marker << ", " 
+              << iter->second.total_entries << ", " 
+              << iter->second.pos 
+              << "]" << dendl;
+
+            RGWDataSyncShardControlCR *cr = new RGWDataSyncShardControlCR(sync_env, sync_env->store->get_zone_params().log_pool, iter->first, iter->second);
             cr->get();
             shard_crs_lock.Lock();
             shard_crs[iter->first] = cr;
