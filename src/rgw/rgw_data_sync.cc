@@ -1264,6 +1264,11 @@ public:
           << sync_marker.pos 
           << "]" << dendl;
 
+        ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncShardCR::full_sync, entries.size=" << entries.size() << dendl;
+        for(map<string, bufferlist>::const_iterator citr=entries.begin(); citr!=entries.end(); ++citr)
+        {
+          ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncShardCR::full_sync, entries: " << citr->first << " => " << citr->second << dendl;
+        }
 
         iter = entries.begin();
         for (; iter != entries.end(); ++iter) {
