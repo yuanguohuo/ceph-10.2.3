@@ -185,7 +185,10 @@ public:
         //    it will be handled at remote side by RGWOp_DATALog_ShardInfo. See: 
         //         RGWOp_DATALog_ShardInfo::execute  -->
         //         RGWDataChangesLog::get_info   -->
-        //         store->time_log_info, get "data_log.{shard_id}" from log pool;
+        //         store->time_log_info(), which will read omap header of "data_log.{shard_id}" from log pool;
+        //   The map header contains: 
+        //         string max_marker;
+        //         utime_t max_time;
         rgw_http_param_pair pairs[] = { { "type" , "data" },
 	                                { "id", buf },
 					{ "info" , NULL },
@@ -263,13 +266,20 @@ public:
   int operate() {
     reenter(this) {
       yield {
-	char buf[16];
-	snprintf(buf, sizeof(buf), "%d", shard_id);
-        rgw_http_param_pair pairs[] = { { "type" , "data" },
-	                                { "id", buf },
-	                                { "marker", pmarker->c_str() },
-	                                { "extra-info", "true" },
-	                                { NULL, NULL } };
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%d", shard_id);
+        //Yuanguo: URI=/admin/log/?type=data&id={shard_id}&marker=xxx&extra-info=true
+        //it will be processed at remote side by:
+        //  RGWOp_DATALog_List, which will list omap key-value pairs
+        //        pool: {zone}.rgw.log
+        //        obj : data_log.{shard}
+        rgw_http_param_pair pairs[] = { 
+          { "type" , "data" },
+          { "id", buf },
+          { "marker", pmarker->c_str() },
+          { "extra-info", "true" },
+          { NULL, NULL } 
+        };
 
         string p = "/admin/log/";
 
@@ -1128,6 +1138,8 @@ class RGWDataSyncShardCR : public RGWCoroutine {
 
   RGWContinuousLeaseCR *lease_cr;
   RGWCoroutinesStack *lease_stack;
+
+  //Yuanguo:  "datalog.sync-status.shard.{remote-zone-id}.X"
   string status_oid;
 
 
@@ -1158,6 +1170,7 @@ public:
                                                       lease_cr(nullptr), lease_stack(nullptr), error_repo(nullptr), max_error_entries(DATA_SYNC_MAX_ERR_ENTRIES),
                                                       retry_backoff_secs(RETRY_BACKOFF_SECS_DEFAULT) {
     set_description() << "data sync shard source_zone=" << sync_env->source_zone << " shard_id=" << shard_id;
+    //Yuanguo:  "datalog.sync-status.shard.{remote-zone-id}.X"
     status_oid = RGWDataSyncStatusManager::shard_obj_name(sync_env->source_zone, shard_id);
     error_oid = status_oid + ".retry";
 
@@ -1342,10 +1355,14 @@ public:
 
   int incremental_sync() {
     reenter(&incremental_cr) {
+      //Yuanguo: error_repo stands for "datalog.sync-status.shard.{remote-zone-id}.X.retry"
+      //    error_repo->appen(key) is to set omap for it:
+      //         key: key
+      //         val: empty
       error_repo = new RGWOmapAppend(sync_env->async_rados, sync_env->store, pool, error_oid, 1 /* no buffer */);
       error_repo->get();
       spawn(error_repo, false);
-      yield init_lease_cr();
+      yield init_lease_cr();  //Yuanguo: lock "datalog.sync-status.shard.{remote-zone-id}.X" for a period of lock_duration
       while (!lease_cr->is_locked()) {
         if (lease_cr->is_done()) {
           ldout(cct, 5) << "lease cr failed, done early " << dendl;
@@ -1373,6 +1390,7 @@ public:
         }
 
         /* process bucket shards that previously failed */
+        //Yuanguo: failed bucket shards were set as omap by error_repo->append().
         yield call(new RGWRadosGetOmapKeysCR(sync_env->store, pool, error_oid, error_marker, &error_entries, max_error_entries));
         ldout(sync_env->cct, 20) << __func__ << "(): read error repo, got " << error_entries.size() << " entries" << dendl;
         iter = error_entries.begin();
@@ -1395,7 +1413,12 @@ public:
           error_marker.clear();
         }
 
-
+        //Yuanguo: read omap header of the following object from remote zone
+        //        pool: {zone}.rgw.log
+        //        obj : data_log.{shard_id}
+        //   The map header contains: 
+        //        string max_marker;
+        //        utime_t max_time;
         yield call(new RGWReadRemoteDataLogShardInfoCR(sync_env, shard_id, &shard_info));
         if (retcode < 0) {
           ldout(sync_env->cct, 0) << "ERROR: failed to fetch remote data log info: ret=" << retcode << dendl;
@@ -1406,8 +1429,15 @@ public:
         datalog_marker = shard_info.marker;
 #define INCREMENTAL_MAX_ENTRIES 100
 	ldout(sync_env->cct, 20) << __func__ << ":" << __LINE__ << ": shard_id=" << shard_id << " datalog_marker=" << datalog_marker << " sync_marker.marker=" << sync_marker.marker << dendl;
+
+  //Yuanguo: if marker just got from remote zone (omap header of data_log.{shard_id}) is newer than what was recorded. 
+  //   See RGWDataSyncCR to check what sync_marker is.
 	if (datalog_marker > sync_marker.marker) {
           spawned_keys.clear();
+
+          //Yuanguo: list omap key-value pairs of the following object from remote zone
+          //        pool: {zone}.rgw.log
+          //        obj : data_log.{shard_id}
           yield call(new RGWReadRemoteDataLogShardCR(sync_env, shard_id, &sync_marker.marker, &log_entries, &truncated));
           if (retcode < 0) {
             ldout(sync_env->cct, 0) << "ERROR: failed to read remote data log info: ret=" << retcode << dendl;
@@ -1430,6 +1460,7 @@ public:
                */
               if (spawned_keys.find(log_iter->entry.key) == spawned_keys.end()) {
                 spawned_keys.insert(log_iter->entry.key);
+
                 spawn(new RGWDataSyncSingleEntryCR(sync_env, log_iter->entry.key, log_iter->log_id, marker_tracker, error_repo, false), false);
                 if (retcode < 0) {
                   stop_spawned_services();
@@ -1544,7 +1575,7 @@ public:
 
       ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncCR::operate, Enter" << dendl;
       /* read sync status */
-      //Yuanguo: read data sync status about source_zone from ceph cluster.
+      //Yuanguo: read data sync status about source_zone from local ceph cluster.
       yield call(new RGWReadDataSyncStatusCoroutine(sync_env, &sync_status));
 
       if (retcode == -ENOENT) {

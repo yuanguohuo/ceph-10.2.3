@@ -577,6 +577,10 @@ void RGWOp_BILog_Delete::execute() {
   return;
 }
 
+
+//Yuanguo: list omap key-value pairs from local ceph cluster:
+//            pool: {zone}.rgw.log
+//            obj : data_log.{shard}
 void RGWOp_DATALog_List::execute() {
   string   shard = s->info.args.get("id");
 

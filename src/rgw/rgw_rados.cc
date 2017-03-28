@@ -4671,7 +4671,6 @@ int RGWRados::time_log_list(const string& oid, const real_time& start_time, cons
   utime_t st(start_time);
   utime_t et(end_time);
 
-  //Yuanguo:  save an 'cls_log_list' in op. see cls/log/cls_log_client.cc:cls_log_list
   cls_log_list(op, st, et, marker, max_entries, entries,
 	       out_marker, truncated);
 
@@ -4701,6 +4700,8 @@ int RGWRados::time_log_info(const string& oid, cls_log_header *header)
 
   bufferlist obl;
 
+  //Yuanguo: send op to OSD, OSD will do the 'cls_log_info' operation. see cls/log/cls_log.cc:cls_log_info
+  //         it will get omap header of oid (object like data_log.4 in pool {zone}.rgw.log);
   int ret = io_ctx.operate(oid, &op, &obl);
   if (ret < 0)
     return ret;

@@ -17,6 +17,11 @@
 #include "global/global_context.h"
 #include "include/compat.h"
 
+//Yuanguo: add log <<<<<<<<<<<<<<<<<<<
+#include "osd/ReplicatedPG.h"
+#include "osd/osd_types.h"
+//Yuanguo: finished adding log  >>>>>>>>>>>>>>
+
 CLS_VER(1,0)
 CLS_NAME(log)
 
@@ -31,7 +36,13 @@ static string log_index_prefix = "1_";
 
 static int write_log_entry(cls_method_context_t hctx, string& index, cls_log_entry& entry)
 {
-  CLS_LOG(1, "YuanguoDbg: write_log_entry, index=%s entry=[%s, %s, %s]\n", index.c_str(), entry.id.c_str(), entry.section.c_str(), entry.name.c_str());
+
+  //Yuanguo: add log <<<<<<<<<<<<<<<<<<<
+  ReplicatedPG::OpContext **pctx = (ReplicatedPG::OpContext **)hctx;
+  string oname = (*pctx)->new_obs.oi.soid.oid.name;
+  CLS_LOG(99, "YuanguoDbg: write_log_entry, %s index=%s entry=[%s, %s, %s]\n", oname.c_str(), index.c_str(), entry.id.c_str(), entry.section.c_str(), entry.name.c_str());
+  //Yuanguo: finished adding log  >>>>>>>>>>>>>>
+
 
   bufferlist bl;
   ::encode(entry, bl);
@@ -99,8 +110,6 @@ static void get_index(cls_method_context_t hctx, utime_t& ts, string& index)
 
 static int cls_log_add(cls_method_context_t hctx, bufferlist *in, bufferlist *out)
 {
-  CLS_LOG(1, "YuanguoDbg: Enter cls_log_add\n");
-
   bufferlist::iterator in_iter = in->begin();
 
   cls_log_add_op op;
@@ -111,11 +120,15 @@ static int cls_log_add(cls_method_context_t hctx, bufferlist *in, bufferlist *ou
     return -EINVAL;
   }
 
-  CLS_LOG(1, "YuanguoDbg: cls_log_add, op.monotonic_inc=%d\n", (int)op.monotonic_inc);
+  //Yuanguo: add log <<<<<<<<<<<<<<<<<<<
+  ReplicatedPG::OpContext **pctx = (ReplicatedPG::OpContext **)hctx;
+  string oname = (*pctx)->new_obs.oi.soid.oid.name;
+  CLS_LOG(99, "YuanguoDbg: cls_log_add, %s op.monotonic_inc=%d\n", oname.c_str(), (int)op.monotonic_inc);
   for(list<cls_log_entry>::const_iterator itr=op.entries.begin(); itr!=op.entries.end(); ++itr)
   {
     CLS_LOG(1, "YuanguoDbg: cls_log_add, cls_log_entry: [%s, %s, %s]\n", itr->id.c_str(), itr->section.c_str(), itr->name.c_str());
   }
+  //Yuanguo: finished adding log  >>>>>>>>>>>>>>
 
   cls_log_header header;
 
@@ -181,6 +194,12 @@ static int cls_log_list(cls_method_context_t hctx, bufferlist *in, bufferlist *o
     return -EINVAL;
   }
 
+  //Yuanguo: add log <<<<<<<<<<<<<<<<<<<
+  ReplicatedPG::OpContext **pctx = (ReplicatedPG::OpContext **)hctx;
+  string oname = (*pctx)->new_obs.oi.soid.oid.name;
+  CLS_LOG(99, "YuanguoDbg: cls_log_list, %s op=[%ld, %s, %ld, %d]\n", oname.c_str(), op.from_time.to_msec(), op.marker.c_str(), op.to_time.to_msec(), op.max_entries);
+  //Yuanguo: finished adding log  >>>>>>>>>>>>>>
+
   map<string, bufferlist> keys;
 
   string from_index;
@@ -202,6 +221,9 @@ static int cls_log_list(cls_method_context_t hctx, bufferlist *in, bufferlist *o
     max_entries = MAX_ENTRIES;
 
   int rc = cls_cxx_map_get_vals(hctx, from_index, log_index_prefix, max_entries + 1, &keys);
+
+  CLS_LOG(99, "YuanguoDbg: cls_log_list, rc=%d keys.size=%d\n", rc, keys.size());
+
   if (rc < 0)
     return rc;
 
@@ -214,10 +236,15 @@ static int cls_log_list(cls_method_context_t hctx, bufferlist *in, bufferlist *o
   string marker;
 
   size_t i;
-  for (i = 0; i < max_entries && iter != keys.end(); ++i, ++iter) {
+  for (i = 0; i < max_entries && iter != keys.end(); ++i, ++iter) 
+  {
     const string& index = iter->first;
+
+    CLS_LOG(99, "YuanguoDbg: cls_log_list, index=%s\n", index.c_str());
+
     marker = index;
     if (use_time_boundary && index.compare(0, to_index.size(), to_index) >= 0) {
+      CLS_LOG(99, "YuanguoDbg: cls_log_list, index=%s done\n", index.c_str());
       done = true;
       break;
     }
@@ -228,6 +255,9 @@ static int cls_log_list(cls_method_context_t hctx, bufferlist *in, bufferlist *o
       cls_log_entry e;
       ::decode(e, biter);
       entries.push_back(e);
+
+      CLS_LOG(99, "YuanguoDbg: cls_log_list, index=%s e=[%s, %s, %s, %ld]\n", index.c_str(), e.id.c_str(), e.section.c_str(), e.name.c_str(), e.timestamp.to_msec());
+
     } catch (buffer::error& err) {
       CLS_LOG(0, "ERROR: cls_log_list: could not decode entry, index=%s", index.c_str());
     }
@@ -320,9 +350,18 @@ static int cls_log_info(cls_method_context_t hctx, bufferlist *in, bufferlist *o
     return -EINVAL;
   }
 
+  //Yuanguo: add log <<<<<<<<<<<<<<<<<<<
+  ReplicatedPG::OpContext **pctx = (ReplicatedPG::OpContext **)hctx;
+  string oname = (*pctx)->new_obs.oi.soid.oid.name;
+  CLS_LOG(99, "YuanguoDbg: cls_log_info, %s op=empty\n", oname.c_str());
+  //Yuanguo: finished adding log  >>>>>>>>>>>>>>
+
   cls_log_info_ret ret;
 
   int rc = read_header(hctx, ret.header);
+
+  CLS_LOG(99, "YuanguoDbg: cls_log_info, ret.header=[%s, %ld]\n", ret.header.max_marker.c_str(), ret.header.max_time.to_msec());
+
   if (rc < 0)
     return rc;
 

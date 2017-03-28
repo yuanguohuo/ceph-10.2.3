@@ -1591,14 +1591,22 @@ int RGWDataChangesLog::list_entries(int shard, const real_time& start_time, cons
   list<cls_log_entry> log_entries;
 
   //Yuanguo: oids[0]="data_log.0", oids[1]="data_log.1" ...
+  //         list omap key-value pairs from local ceph cluster:
+  //            pool: {zone}.rgw.log
+  //            obj : data_log.{shard}
   int ret = store->time_log_list(oids[shard], start_time, end_time,
 				 max_entries, log_entries, marker,
 				 out_marker, truncated);
   if (ret < 0)
     return ret;
 
+  ldout(cct, 99) << "YuanguoDbg: RGWDataChangesLog::list_entries, log_entries.size=" << log_entries.size() << dendl;
+
   list<cls_log_entry>::iterator iter;
-  for (iter = log_entries.begin(); iter != log_entries.end(); ++iter) {
+  for (iter = log_entries.begin(); iter != log_entries.end(); ++iter) 
+  {
+    ldout(cct, 99) << "YuanguoDbg: RGWDataChangesLog::list_entries, log_entries: [" << iter->id << ", " << iter->section << ", " << iter->name << ", " << iter->timestamp << "]" << dendl;
+
     rgw_data_change_log_entry log_entry;
     log_entry.log_id = iter->id;
     real_time rt = iter->timestamp.to_real_time();
@@ -1610,6 +1618,9 @@ int RGWDataChangesLog::list_entries(int shard, const real_time& start_time, cons
       lderr(cct) << "ERROR: failed to decode data changes log entry" << dendl;
       return -EIO;
     }
+
+    ldout(cct, 99) << "YuanguoDbg: RGWDataChangesLog::list_entries: log_entry=[" << log_entry.log_id << ", [" << log_entry.entry.entity_type << ", " << log_entry.entry.key << "]]" << dendl;
+
     entries.push_back(log_entry);
   }
 

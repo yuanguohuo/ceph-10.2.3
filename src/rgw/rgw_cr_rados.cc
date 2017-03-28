@@ -429,8 +429,6 @@ int RGWOmapAppend::operate() {
         if (entries.size() >= window_size || going_down) {
           set_status() << "flushing to omap";
 
-          //Yuanguo: pool={zone}.rgw.log
-          //Yuanguo: oid=data.full-sync.index.{remote-zone-id}.X
           //Yuanguo: omap has keys only (value is empty bufferlist) ???
           call(new RGWRadosSetOmapKeysCR(store, pool, oid, entries));
           entries.clear();
