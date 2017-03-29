@@ -1430,7 +1430,7 @@ public:
 #define INCREMENTAL_MAX_ENTRIES 100
 	ldout(sync_env->cct, 20) << __func__ << ":" << __LINE__ << ": shard_id=" << shard_id << " datalog_marker=" << datalog_marker << " sync_marker.marker=" << sync_marker.marker << dendl;
 
-  //Yuanguo: if marker just got from remote zone (omap header of data_log.{shard_id}) is newer than what was recorded. 
+  //Yuanguo: if marker just got from remote zone (omap header of data_log.{shard_id}) is newer than what was recorded locally. 
   //   See RGWDataSyncCR to check what sync_marker is.
 	if (datalog_marker > sync_marker.marker) {
           spawned_keys.clear();
@@ -1438,6 +1438,17 @@ public:
           //Yuanguo: list omap key-value pairs of the following object from remote zone
           //        pool: {zone}.rgw.log
           //        obj : data_log.{shard_id}
+          // What are the key-value pairs? See RGWDataChangesLog::add_entry. They are:
+          //        1_1489653363.684562_381.1 => some info including bucke-tname, bucked-id, bucket-shard, modification timestamp
+          // Notice the key of KV pair is not 'change.key', but generated at: cls/log/cls_log.cc:cls_log_add
+          // The longer story: we have B buckets, each has rgw_override_bucket_index_max_shards shards, then
+          //    hash(bucket-N, S) = D    the hash is function choose_oid() 
+          //          S is the 'bucket-shard', D is the 'data-log-shard', and
+          //          0 <= N < B  <------ all buckets
+          //          0 <= S < rgw_override_bucket_index_max_shards  <------ all shards of all buckets
+          //          0 <= D < rgw_data_log_num_shards  <------- all shards of all buckets are sharded into [0, rgw_data_log_num_shards)
+          // that is to say, any modification of a bucket will be recorded as omap KV pair of exactly one "data_log.[0-rgw_data_log_num_shards)"
+          // we are considering data_log.{shard_id} now.
           yield call(new RGWReadRemoteDataLogShardCR(sync_env, shard_id, &sync_marker.marker, &log_entries, &truncated));
           if (retcode < 0) {
             ldout(sync_env->cct, 0) << "ERROR: failed to read remote data log info: ret=" << retcode << dendl;
@@ -2673,8 +2684,11 @@ int RGWBucketShardIncrementalSyncCR::operate()
       uint32_t lock_duration = cct->_conf->rgw_sync_lease_period;
       string lock_name = "sync_lock.incremental"; /* allow concurrent full sync and incremental sync on the same bucket */
       RGWRados *store = sync_env->store;
+
+      ldout(cct, 99) << "Yuanguo: RGWBucketShardIncrementalSyncCR::operate, lock " << status_oid << " duration "<< lock_duration << dendl;
       lease_cr = new RGWContinuousLeaseCR(sync_env->async_rados, store, store->get_zone_params().log_pool, status_oid,
                                           lock_name, lock_duration, this);
+
       lease_cr->get();
       lease_stack = spawn(lease_cr, false);
     }
