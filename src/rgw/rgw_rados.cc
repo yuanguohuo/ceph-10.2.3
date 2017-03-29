@@ -11953,10 +11953,17 @@ int RGWRados::cls_bucket_head(rgw_bucket& bucket, int shard_id, map<string, stru
   if (r < 0)
     return r;
 
-  ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_bucket_head, bucket_instance_ids->size=" << bucket_instance_ids->size() << dendl;
-  for(map<int, string>::const_iterator citr=bucket_instance_ids->begin(); citr!=bucket_instance_ids->end(); ++citr)
+  if(bucket_instance_ids)
   {
-    ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_bucket_head, bucket_instance_ids: " << citr->first << " => " << citr->second << dendl;
+    ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_bucket_head, bucket_instance_ids->size=" << bucket_instance_ids->size() << dendl;
+    for(map<int, string>::const_iterator citr=bucket_instance_ids->begin(); citr!=bucket_instance_ids->end(); ++citr)
+    {
+      ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_bucket_head, bucket_instance_ids: " << citr->first << " => " << citr->second << dendl;
+    }
+  }
+  else
+  {
+    ldout(cct, 99) << "YuanguoDbg: RGWRados::cls_bucket_head, bucket_instance_ids is null" << dendl;
   }
 
   r = CLSRGWIssueGetDirHeader(index_ctx, oids, list_results, cct->_conf->rgw_bucket_index_max_aio)();
