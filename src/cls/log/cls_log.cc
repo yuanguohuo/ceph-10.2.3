@@ -222,7 +222,7 @@ static int cls_log_list(cls_method_context_t hctx, bufferlist *in, bufferlist *o
 
   int rc = cls_cxx_map_get_vals(hctx, from_index, log_index_prefix, max_entries + 1, &keys);
 
-  CLS_LOG(99, "YuanguoDbg: cls_log_list, rc=%d keys.size=%d\n", rc, keys.size());
+  CLS_LOG(99, "YuanguoDbg: cls_log_list, rc=%d keys.size=%lu\n", rc, keys.size());
 
   if (rc < 0)
     return rc;
