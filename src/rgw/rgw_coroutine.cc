@@ -269,6 +269,9 @@ int RGWCoroutinesStack::wait(const utime_t& interval)
 void RGWCoroutinesStack::wakeup()
 {
   RGWCompletionManager *completion_mgr = env->manager->get_completion_mgr();
+
+  ldout(cct, 99) << "YuanguoDbg: RGWCoroutinesStack::wakeup, completion_mgr=" << completion_mgr << dendl;
+
   completion_mgr->wakeup((void *)this);
 }
 
