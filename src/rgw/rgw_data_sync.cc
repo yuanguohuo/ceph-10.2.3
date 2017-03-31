@@ -753,6 +753,9 @@ public:
     delete entries_index;
   }
 
+  // This is to build full sync maps.
+  // Notice: if the multisite is configured when source/remote zone is empty,
+  //         nothing is done here.
   int operate() {
     reenter(this) {
 
@@ -795,6 +798,8 @@ public:
 
       for (iter = result.begin(); iter != result.end(); ++iter) 
       {
+        //Yuanguo: the key is like:  testbuckBBB:900d449b-3c56-4949-8b88-bc8a6d4ee3b1.4123.2
+        //                           {buckName}:{remote-bucket-key}
         ldout(sync_env->cct, 20) << "list metadata: section=bucket.index key=" << *iter << dendl;
         key = *iter;
         ldout(sync_env->cct, 99) << "YuanguoDbg: RGWListBucketIndexesCR::operate, get bucket instance: " << *iter << dendl;
@@ -1586,7 +1591,17 @@ public:
 
       ldout(sync_env->cct, 99) << "YuanguoDbg: RGWDataSyncCR::operate, Enter" << dendl;
       /* read sync status */
-      //Yuanguo: read data sync status about source_zone from local ceph cluster.
+      //Yuanguo: read data sync status about source_zone from local ceph cluster:
+      // 1 read local ceph cluster (RGWReadDataSyncStatusCoroutine)
+      //      pool: {zone}.rgw.log    
+      //      obj: datalog.sync-status.{remote-zone-id}
+      //   to get 'state' and 'num_shards', and save into
+      //   sync_status.sync_info (see parent class RGWSimpleRadosReadCR)
+      // 2 for each data-log-shard X, read the content of following object in local ceph cluster, 
+      //      pool: {zone}.rgw.log
+      //      obj: datalog.sync-status.shard.{remote-zone-id}.X
+      //   to get state(full or increment sync), marker, next_step_marker,
+      //   timestamp ... and save into sync_status->sync_markers[X]
       yield call(new RGWReadDataSyncStatusCoroutine(sync_env, &sync_status));
 
       if (retcode == -ENOENT) {
@@ -2240,6 +2255,11 @@ public:
   int operate() {
     reenter(this) {
       yield {
+        //Yuanguo: processed by RGWOp_BILog_List at remote side,
+        //  get bucket shard logs, that's omap KV paris of  
+        //       remote pool: {source_zone}.rgw.buckets.index
+        //       remote obj : .dir.{key-of-bucket-B}.S
+        //  starting at marker;
         rgw_http_param_pair pairs[] = { { "bucket-instance", instance_key.c_str() },
 					{ "format" , "json" },
 					{ "marker" , marker.c_str() },
@@ -2707,6 +2727,28 @@ int RGWBucketShardIncrementalSyncCR::operate()
     do {
       ldout(sync_env->cct, 20) << __func__ << "(): listing bilog for incremental sync" << dendl;
       set_status() << "listing bilog; position=" << inc_marker.position;
+
+
+      //Yuanguo: processed by RGWOp_BILog_List at remote side,
+      //  get bucket shard logs, that is KV pairs of 
+      //       remote pool: {source_zone}.rgw.buckets.index
+      //       remote obj : .dir.{key-of-bucket-B}.S
+      //  starting at inc_marker.position; For example the object has omap KV pairs:
+      //     OBJECT_100
+      //     OBJECT_2
+      //     OBJECT_7
+      //     0_00000000001.1.2
+      //     0_00000000002.2.2
+      //     0_00000000003.3.3 
+      //     0_00000000004.4.3
+      //     0_00000000005.5.2
+      //     0_00000000006.6.3
+      //  if inc_marker.position = 0_00000000003.3.3, then 
+      //     0_00000000003.3.3 
+      //     0_00000000004.4.3
+      //     0_00000000005.5.2
+      //     0_00000000006.6.3
+      //  will be returned;
       yield call(new RGWListBucketIndexLogCR(sync_env, bs, inc_marker.position,
                                              &list_result));
       if (retcode < 0 && retcode != -ENOENT) {

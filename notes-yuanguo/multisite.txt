@@ -111,7 +111,7 @@ In this example, we make a simplest configuration:
   radosgw-admin zonegroup default --rgw-zonegroup=zonegroup_hyg
 
 2.4.5 Create the secondary zone 
-  Notice: maste side and secondary side share the same realm and zonegroup, so realm and zonegroup are pulled from master side, but zones are different, so create it:
+  Notice: maste site and secondary site share the same realm and zonegroup, so realm and zonegroup are pulled from master site, but zones are different, so create it:
   radosgw-admin zone create --rgw-zonegroup=zonegroup_hyg --rgw-zone=zone_secondary_hyg --endpoints=http://node2.localdomain:8000 --default --access-key=1WYCCJZ9JRLWZU8JTDQJ --secret=PXhbQDJVeF1PsXw5tsCuIaKY0N8s1BP2J3yCn9K3
 
 2.4.6 Update the peroid
@@ -626,77 +626,239 @@ user.rgw.acl
 
 
 
++=======================================================================+
+|                     Remote Site (Source Site)                         |
++=======================================================================+
 
-====================
-data-log-shard:  [0, rgw_data_log_num_shards)   e.g. 4  
-bucket-shard  :  [0, rgw_override_bucket_index_max_shards)  e.g. 3
+0.1 Pool: {source-zone}.rgw.data.root
+    Bucket instances;
 
-              Remote (Source)                                   Local (Secondary)
+0.2 Pool: {source-zone}.rgw.buckets.data
+    Objects;
 
-bucket-0 shard0
-bucket-0 shard1
-bucket-0 shard2               data_log.0    =======>    datalog.sync-status.shard.{remote-zone-id}.0
-bucket-1 shard0
-bucket-1 shard1    [map]      data_log.1    =======>    datalog.sync-status.shard.{remote-zone-id}.1
-bucket-1 shard2
-bucket-2 shard0               data_log.2    =======>    datalog.sync-status.shard.{remote-zone-id}.2
-bucket-2 shard1
-bucket-2 shard2               data_log.3    =======>    datalog.sync-status.shard.{remote-zone-id}.3
-bucket-3 shard0
-bucket-3 shard1
-bucket-3 shard2
+0.3 Pool: {source-zone}.rgw.buckets.index, for example 
+    we have 4 buckets, each bucket has 3 shards (rgw_override_bucket_index_max_shards=3)
+
+    bucket-0 shard0     .dir.{key-of-bucket-0}.0
+    bucket-0 shard1     .dir.{key-of-bucket-0}.1
+    bucket-0 shard2     .dir.{key-of-bucket-0}.2
+    bucket-1 shard0     .dir.{key-of-bucket-1}.0
+    bucket-1 shard1     .dir.{key-of-bucket-1}.1
+    bucket-1 shard2     .dir.{key-of-bucket-1}.2
+    bucket-2 shard0     .dir.{key-of-bucket-2}.0
+    bucket-2 shard1     .dir.{key-of-bucket-2}.1
+    bucket-2 shard2     .dir.{key-of-bucket-2}.2
+    bucket-3 shard0     .dir.{key-of-bucket-3}.0
+    bucket-3 shard1     .dir.{key-of-bucket-3}.1
+    bucket-3 shard2     .dir.{key-of-bucket-3}.2
+
+0.4 Pool: {source-zone}.rgw.log  (for example, rgw_data_log_num_shards=4)
+
+    data_log.0
+    data_log.1
+    data_log.2
+    data_log.3
+
+0.5 there are 
+         {bucket-number}*rgw_override_bucket_index_max_shards (12 in our example)
+    bucket shards, and
+         rgw_data_log_num_shards (4 in our example)
+    data log shards;
+
+    These bucket shards are mapped to these data log shards, see function choose_oid()
+
+        bucket-0 shard0 -------- \
+        bucket-0 shard1            \
+        bucket-0 shard2              \            
+        bucket-1 shard0                \
+        bucket-1 shard1                   data_log.0
+        bucket-1 shard2     map to        data_log.1
+        bucket-2 shard0                   data_log.2 
+        bucket-2 shard1                   data_log.3
+        bucket-2 shard2                /        
+        bucket-3 shard0              /
+        bucket-3 shard1            /
+        bucket-3 shard2 -------- /
+
+0.6 When an object (OBJ_444) in put into bucket-B, shardS 
+     A. the object is written into pool  {source-zone}.rgw.buckets.data
+
+     B. write log into pool={source-zone}.rgw.buckets.index, obj=.dir.{key-of-bucket-B}.S as KV pairs:
+            OBJ_444             ==> info of OBJ_444, such as owner, content-type ...
+            .0_00000000001.4.2  ==> write OBJ_444 state=CLS_RGW_STATE_PENDING_MODIFY 
+            .0_00000000002.5.3  ==> write OBJ_444 state=CLS_RGW_STATE_COMPLETE 
+        update omap header to
+            .0_00000000002.5.3
+
+     C. If bucket-B shardS is mapped to data_log.X, then 
+        write log into  pool={source-zone}.rgw.log,  obj=data_log.X as KV pair
+            1_1489979397.374156_23.1 ==> some info like bucket-B shardS has modification, timestampT
+        update omap header to
+            1_1489979397.374156_23.1
+        
+      Important: the data log shard and bucket shard are very similar in that:
+            modifications are logged as KV paris;
+            latest marker are recorded as omap header;
+       
+0.7 So, there are 2 kinds of shards:
+    data-log-shard:  [0, rgw_data_log_num_shards) 
+    bucket-shard  :  [0, rgw_override_bucket_index_max_shards)
 
 
-[[[At Source side]]]
+            
++=======================================================================+
+|                     Local Site (Secondary Site)                       |
++=======================================================================+
 
-Take data_log.1 for example, the following 3 bucket-shard are mapped to it. (See function choose_oid())
-    bucket-0 shard2 
-    bucket-2 shard0
-    bucket-2 shard1
+0.8 Pool {secondary-zone}.rgw.log
 
-Then, data_log.1 records modifications of the 3 bucket shard.
+  0.8.1 the mapping between bucket shard to data log shard (for full sync)
+    data.full-sync.index.{source-zone-id}.0    -----   remote data_log.0 
+    data.full-sync.index.{source-zone-id}.1    -----   remote data_log.1
+    data.full-sync.index.{source-zone-id}.2    -----   remote data_log.2 
+    data.full-sync.index.{source-zone-id}.3    -----   remote data_log.3 
 
-# rados -p zone_master_hyg.rgw.log  listomapkeys data_log.1
-1_1490781929.259023_21.1  ==>  some info like bucket-2 shard0 has modification, timestamp1
-1_1490781929.282654_22.1  ==>  some info like bucket-2 shard1 has modification, timestamp2
-1_1490781936.075013_25.1  ==>  some info like bucket-2 shard1 has modification, timestamp3
-1_1490781936.075013_25.2  ==>  some info like bucket-0 shard2 has modification, timestamp4
-
-
-The omap header of data_log.1 records the marker of latest modification:  1_1490781936.075013_25.2 
-
-# rados -p zone_master_hyg.rgw.log  getomapheader data_log.1
-header (42 bytes) :
-00000000  01 01 24 00 00 00 18 00  00 00 31 5f 31 34 39 30  |..$.......1_1490|
-00000010  37 38 31 39 33 36 2e 30  37 35 30 31 33 5f 32 35  |781936.075013_25|
-00000020  2e 32 f0 86 db 58 c8 9b  78 04                    |.2...X..x.|
-0000002a
-
-[[[At Secondary side]]]
-The corresponding object is datalog.sync-status.shard.{remote-zone-id}.1, which records 
-the latest marker that has been synced.
-
-# rados -p zone_secondary_hyg.rgw.log  get datalog.sync-status.shard.{remote-zone-id}.1 file 
-# cat xx
-:1_1490781936.075013_25.2    <--- latest marker, the same as the marker of the latest modification at source side, which means already synced.
+    # rados  -p {secondary-zone}.rgw.log listomapkeys data.full-sync.index.{source-zone-id}.1
+      testbuckAAA:{key-of-bucket-testbuckAAA}:0
+      testbuckAAA:{key-of-bucket-testbuckAAA}:2
+      testbuckCCC:{key-of-bucket-testbuckCCC}:1
+    
+    that's to say, the following 3 bucket shards are mapped to data log shard 1
+      testbuckAAA, shard0
+      testbuckAAA, shard2
+      testbuckCCC, shard1
 
 
+  0.8.2  current marker of data log shards
+    datalog.sync-status.shard.{source-zone-id}.0    -----   remote data_log.0 
+    datalog.sync-status.shard.{source-zone-id}.1    -----   remote data_log.1
+    datalog.sync-status.shard.{source-zone-id}.2    -----   remote data_log.2
+    datalog.sync-status.shard.{source-zone-id}.3    -----   remote data_log.3
+
+
+  0.8.3 current marker (inc_marker, full_marker) of bucket shards as xattrs
+    bucket.sync-status.{remote-zone-id}:{bucket-0}:{bucket_id}:0  ---- bucket-0 shard0
+    bucket.sync-status.{remote-zone-id}:{bucket-0}:{bucket_id}:1  ---- bucket-0 shard1
+    bucket.sync-status.{remote-zone-id}:{bucket-0}:{bucket_id}:2  ---- bucket-0 shard2
+
+    bucket.sync-status.{remote-zone-id}:{bucket-1}:{bucket_id}:0  ---- bucket-1 shard0
+    bucket.sync-status.{remote-zone-id}:{bucket-1}:{bucket_id}:1  ---- bucket-1 shard1
+    bucket.sync-status.{remote-zone-id}:{bucket-1}:{bucket_id}:2  ---- bucket-1 shard2
+
+    bucket.sync-status.{remote-zone-id}:{bucket-2}:{bucket_id}:0  ---- bucket-2 shard0
+    bucket.sync-status.{remote-zone-id}:{bucket-2}:{bucket_id}:1  ---- bucket-2 shard1
+    bucket.sync-status.{remote-zone-id}:{bucket-2}:{bucket_id}:2  ---- bucket-2 shard2
+
+    bucket.sync-status.{remote-zone-id}:{bucket-3}:{bucket_id}:0  ---- bucket-3 shard0
+    bucket.sync-status.{remote-zone-id}:{bucket-3}:{bucket_id}:1  ---- bucket-3 shard1
+    bucket.sync-status.{remote-zone-id}:{bucket-3}:{bucket_id}:2  ---- bucket-3 shard2
 
 
 
-====================
+Example:
+ 
+At source site
+   A. assume that these 3 bucket shard are mapped to data log shard 1. 
+           bucket-2 shard0
+           bucket-2 shard1
+           bucket-0 shard2
+ 
+   B.  write BJ_444 into bucket-2 shard0
+       write BJ_555 into bucket-2 shard1
+       write BJ_666 into bucket-2 shard1
+       write BJ_777 into bucket-0 shard2
+
+   C. data_log.1 records the modifications:
+
+     i. The omap header of data_log.1 records the marker of the latest modification: 
+             1_1490781936.075013_25.2 
+     ii. the omap KV pairs records the modifications:  
+       # rados -p {source-zone}.rgw.log  listomapkeys data_log.1
+       1_1490781929.259023_21.1  ==>  some info like bucket-2 shard0 has modification, timestamp1
+       1_1490781929.282654_22.1  ==>  some info like bucket-2 shard1 has modification, timestamp2
+       1_1490781936.075013_25.1  ==>  some info like bucket-2 shard1 has modification, timestamp3
+       1_1490781936.075013_25.2  ==>  some info like bucket-0 shard2 has modification, timestamp4
+       
+   D. the bucket shard records the modifications of each bucket shard
+       .dir.{key-of-bucket-2}.0:   --> bucket-2 shard0
+           the omap header records the marker of the latest modification
+                0_00000000002.6.3
+           the KV pairs records the modifications:
+                OBJECT_444         ==> info of OBJ_444, such as owner, content-type ...
+                0_00000000001.5.2  ==> write OBJ_444 state=CLS_RGW_STATE_PENDING_MODIFY 
+                0_00000000002.6.3  ==> write OBJ_444 state=CLS_RGW_STATE_COMPLETE 
+
+
+       .dir.{key-of-bucket-2}.1:   --> bucket-2 shard1
+           the omap header records the marker of the latest modification
+                0_00000000004.10.3 
+           the KV pairs records the modifications:
+                OBJECT_555         ==> info of OBJ_555, such as owner, content-type ...
+                OBJECT_666         ==> info of OBJ_666, such as owner, content-type ...
+                0_00000000001.5.2  ==> write OBJ_555 state=CLS_RGW_STATE_PENDING_MODIFY 
+                0_00000000002.6.2  ==> write OBJ_555 state=CLS_RGW_STATE_PENDING_MODIFY 
+                0_00000000003.8.3  ==> write OBJ_666 state=CLS_RGW_STATE_COMPLETE 
+                0_00000000004.10.3 ==> write OBJ_666 state=CLS_RGW_STATE_COMPLETE 
+
+       .dir.{key-of-bucket-0}.2:  --> bucket-0 shard2
+           the omap header records the marker of the latest modification
+                0_00000000002.6.3
+           the KV pairs records the modifications:
+                OBJECT_777         ==> info of OBJ_777, such as owner, content-type ...
+                0_00000000001.1.2  ==> write OBJ_777 state=CLS_RGW_STATE_PENDING_MODIFY 
+                0_00000000002.2.3  ==> write OBJ_777 state=CLS_RGW_STATE_COMPLETE 
+              
+
+At secondary site:
+   A. datalog.sync-status.shard.{source-zone-id}.1 records the marker that has been synced.
+       # rados -p {secondary-zone}.rgw.log get datalog.sync-status.shard.{source-zone-id}.1 file
+       # cat file
+           1_1490781929.259023_21.1
+       It means that, marker 1_1490781929.259023_21.1 has been synced.
+
+   B. The sync thread will request omap header of data_log.1 from source zone, and it will get: 
+           1_1490781936.075013_25.2
+      Because 
+           1_1490781936.075013_25.2 > 1_1490781929.259023_21.1 
+      it knows there are data to sync. Then it lists omap KV pairs of data_log.1 from source zone, 
+      and it will get,
+           1_1490781929.282654_22.1
+           1_1490781936.075013_25.1
+           1_1490781936.075013_25.2
+      then it knows,
+        bucket-2 shard1 has modification, timestamp2
+        bucket-2 shard1 has modification, timestamp3
+        bucket-0 shard2 has modification, timestamp4
+
+   C. take bucket-2 shard1 for example (bucket-0 shard2 is similar). A marker
+      was recorded locally at bucket.sync-status.{remote-zone-id}:{bucket-2}:{bucket_id}:1
+             0_00000000001.5.2
+      then, it lists logs of .dir.{key-of-bucket-2}.1 from source zone starting
+      at maker 0_00000000001.5.2, and it gets:
+                0_00000000001.5.2  ==> write OBJ_555 state=CLS_RGW_STATE_PENDING_MODIFY 
+                0_00000000002.6.2  ==> write OBJ_555 state=CLS_RGW_STATE_PENDING_MODIFY 
+                0_00000000003.8.3  ==> write OBJ_666 state=CLS_RGW_STATE_COMPLETE 
+                0_00000000004.10.3 ==> write OBJ_666 state=CLS_RGW_STATE_COMPLETE 
+      process these logs one by one,
+                for CLS_RGW_STATE_PENDING_MODIFY, skip;
+                for CLS_RGW_STATE_COMPLETE, sync this obj;
+                 
+
++==================================================================+
+|              Secondary Site code                                 |
++==================================================================+
 RGWDataSyncCR:
 1.  RGWReadDataSyncStatusCoroutine
 
   1.1 read local ceph cluster (RGWReadDataSyncStatusCoroutine)
-            pool: {zone}.rgw.log    
-            obj: datalog.sync-status.{remote-zone-id}
+            local pool: {secondary-zone}.rgw.log    
+            local obj: datalog.sync-status.{remote-zone-id}
       to get 'state' and 'num_shards', and save into
       sync_status.sync_info (see parent class RGWSimpleRadosReadCR)
 
   1.2 for each data-log-shard X, read the content of following object in local ceph cluster, 
-            pool: {zone}.rgw.log
-            obj: datalog.sync-status.shard.{remote-zone-id}.X
+            local pool: {secondary-zone}.rgw.log
+            local obj: datalog.sync-status.shard.{remote-zone-id}.X
       to get state(full or increment sync), marker, next_step_marker,
       timestamp ... and save into sync_status->sync_markers[X]
 
@@ -708,25 +870,101 @@ RGWDataSyncCR:
   2.3  lock it again
 
   2.4  for each data-log-shard X, read remote ceph cluster
-            pool: {remote-zone}.rgw.log 
-            obj:  data_log.X
+            remote pool: {source-zone}.rgw.log 
+            remote obj:  data_log.X
        and save into shards_info[X]
 
   2.5  for each data-log-shard X, save shards_info[X] to local ceph cluster,
-            pool: {zone}.rgw.log 
-            obj: datalog.sync-status.shard.{remote-zone-id}.X
+            local pool: {secondary-zone}.rgw.log 
+            local obj : datalog.sync-status.shard.{remote-zone-id}.X
        Notice: See step 1.2, they are the same objs.
+
+       What is done by 2.4 and 2.5?
+             Remote                           Local
+           data_log.0      ====>    "datalog.sync-status.shard.{remote-zone-id}.0"
+           data_log.1      ====>    "datalog.sync-status.shard.{remote-zone-id}.1"
+           data_log.2      ====>    "datalog.sync-status.shard.{remote-zone-id}.2"
+           ......
+           data_log.N      ====>    "datalog.sync-status.shard.{remote-zone-id}.N"    N = rgw_data_log_num_shards
 
   2.6  change  sync_status.sync_info.state to StateBuildingFullSyncMaps, and
        save into local ceph cluster:
-            pool: {zone}.rgw.log
-            obj: datalog.sync-status.{remote-zone-id}
+            local pool: {secondary-zone}.rgw.log
+            local obj: datalog.sync-status.{remote-zone-id}
        Notice: See step 1.1, it's the same obj. Now, we are changing the state.
 
   2.7  unlock datalog.sync-status.{remote-zone-id}  (the same obj in step 1.1, 2.1)
 
 3 (if 'state' got in 1.1 is StateBuildingFullSyncMaps), RGWListBucketIndexesCR 
+  Notice: if the multisite is configured when source/remote zone is empty,
+          step 3 does nothing, because there is no data when bulding the full
+          sync maps.
+  3.1  create entries_index (RGWShardedOmapCRManager), it stands for the objs in local ceph cluster:
+                local pool: {secondary-zone}.rgw.log 
+                local objs: 
+                      data.full-sync.index.{remote-zone-id}.0
+                      data.full-sync.index.{remote-zone-id}.1
+                      ...
+                      data.full-sync.index.{remote-zone-id}.N     N = rgw_data_log_num_shards
+    
+       entries_index->append(key, X) is to set omap 
+                      key: key
+                      val: empty
+       to object:     
+                      data.full-sync.index.{remote-zone-id}.X
 
+  3.2  list bucket instances from remote zone (call RGWReadRESTResourceCR with no key).
+                 remote pool: {source-zone}.rgw.data.root   
+                 remote objs:
+                              .bucket.meta.{bucket-name-A}:{remote-zone-id}.4133.1
+                              .bucket.meta.{bucket-name-B}:{remote-zone-id}.4139.2
+                              .bucket.meta.{bucket-name-C}:{remote-zone-id}.4138.3
+                              ......
+        a list of bucket instances are returned:
+                 {bucket-name-A}:{remote-zone-id}.4133.1
+                 {bucket-name-B}:{remote-zone-id}.4139.2
+                 {bucket-name-C}:{remote-zone-id}.4138.3
+                 ......
+  3.3 for each bucket instance returned in step 3.2, e.g. 
+                 {bucket-name-A}:{remote-zone-id}.4133.1
+      get the detail info about it.
+      (call RGWReadRESTResourceCR with key="{bucket-name-A}:{remote-zone-id}.4133.1")
+      detail info includes:
+                 num_shards of bucket-name-A;
+                 name of bucket-name-A;
+                 index pool, data pool, ... of bucket-name-A;
+      3.3.1 for i in [0, num_shards), for example, 
+                 bucket-name-A, shard-i is mapped to X.
+            then, set omap (by 'entries_index', see step 3.1)
+                 key: {bucket-name-A}:{remote-zone-id}.4133.1
+                 val: empty
+            to local obj:
+                 local pool: {secondary-zone}.rgw.log
+                 local obj : data.full-sync.index.{remote-zone-id}.X
+
+       At last, data.full-sync.index.{remote-zone-id}.X     0 <= X < rgw_data_log_num_shards
+       records at source/remote site, which [bucket shard] are mapped to X.  For example:
+            # rados -p {zone}.rgw.log listomapkeys data.full-sync.index.{remote-zone-id}.3
+                testbuckAAA:900d449b-3c56-4949-8b88-bc8a6d4ee3b1.4122.1:1
+                testbuckAAA:900d449b-3c56-4949-8b88-bc8a6d4ee3b1.4122.1:5
+                testbuckBBB:900d449b-3c56-4949-8b88-bc8a6d4ee3b1.4123.2:1
+                testbuckBBB:900d449b-3c56-4949-8b88-bc8a6d4ee3b1.4123.2:5
+                testbuckCCC:900d449b-3c56-4949-8b88-bc8a6d4ee3b1.4124.3:1
+                testbuckCCC:900d449b-3c56-4949-8b88-bc8a6d4ee3b1.4124.3:5
+       that is to say,
+                testbuckAAA, shard1
+                testbuckAAA, shard5
+                testbuckBBB, shard1
+                testbuckBBB, shard5
+                testbuckCCC, shard1
+                testbuckCCC, shard5
+        are mapped to X, at remote site.
+
+
+  3.4 for each data-log-shard X, there are a number of [bucket, shard] mapped to X, 
+      then, save the number in local obj:
+            local pool: {secondary-zone}.rgw.log
+            local obj : datalog.sync-status.shard.{remote-zone-id}.X 
 
 4 (if 'state' got in 1.1 is StateSync),  for each data-log-shard X, 
          RGWDataSyncShardControlCR -->
@@ -737,29 +975,29 @@ RGWDataSyncCR:
   4.1.1 create an error repository, error_repo: datalog.sync-status.shard.{remote-zone-id}.X.retry
         error_repo->append(key) is to set an omap KV pair (key=key, val=empty)
         failed bucket shards will be appended here, and will be processed (retried) at 4.1.5
-  4.1.2 lock "datalog.sync-status.shard.{remote-zone-id}.X" for a period of lock_duration
-  4.1.3 create a marker_tracker;  it's used to 
+  4.1.2 lock local obj "datalog.sync-status.shard.{remote-zone-id}.X" for a period of lock_duration
+  4.1.3 create a marker_tracker (RGWDataSyncShardMarkerTrack);  it's used to 
          i.  check if a bucket shard is in progress. See 4.1.9;  2.
          ii. update the maker.  See 4.1.7  and 4.1.9.C
   4.1.4 process out of band updates (Yuanguo: generated by notification ??)
   4.1.5 process bucket shards that previously failed.
   4.1.6 read omap header of the following object from remote zone
-              pool: {zone}.rgw.log
-              obj : data_log.X
+              remote pool: {source-zone}.rgw.log
+              remote obj : data_log.X
         The map header contains:
               string max_marker;
               utime_t max_time;
   4.1.7 if the data log marker got in 4.1.6 is NOT newer than what was recorded locally,
         this round of incremental sync is finished.
         See 1.2, where the recorded markers were read from local ceph cluster. 
-               pool: {zone}.rgw.log
-               obj: datalog.sync-status.shard.{remote-zone-id}.X
+               local pool: {secondary-zone}.rgw.log
+               local obj: datalog.sync-status.shard.{remote-zone-id}.X
                Yuanguo: where did these markers get updated ??? 
                   Answer: the marker_tracker, See 4.1.3 and 4.1.9.C
   4.1.8 else, if the data log marker got in 4.1.6 is newer than what was recorded locally
         read omap KV paris of the following object from remote zone
-              pool: {zone}.rgw.log
-              obj : data_log.X
+              remote pool: {source-zone}.rgw.log
+              remote obj : data_log.X
         What are the KV pairs? See RGWDataChangesLog::add_entry. They are:
               1_1489653363.684562_381.1 => some info including bucke-tname, bucked-id, bucket-shard, modification timestamp
               Notice the key of KV pair is not 'change.key', but generated at: cls/log/cls_log.cc:cls_log_add
@@ -770,21 +1008,21 @@ RGWDataSyncCR:
                     0 <= S < rgw_override_bucket_index_max_shards  <------ all shards of all buckets
                     0 <= D < rgw_data_log_num_shards  <------- all shards of all buckets are sharded into [0, rgw_data_log_num_shards)
               that is to say, any modification of a bucket will be recorded as omap KV pair of exactly one "data_log.[0-rgw_data_log_num_shards)"
-              we are considering the specific data_log.X now, and we may get something like: 
+              we are consitering the specific data_log.X now, and we may get something like: 
                     1_1490768507.881727_3.1 => some info like bucket-2 shard3 has modification timestamp1
                     1_1490768519.257779_4.1 => some info like bucket-5 shard1 has modification timestamp2
                     1_1490768527.759371_5.1 => some info like bucket-1 shard4 has modification timestamp3
                     1_1490768541.378290_6.1 => some info like bucket-6 shard0 has modification timestamp4
                     ......
                           
-  4.1.9 For any entry returned in 4.1.8 (it's some info like: 1_1490768519.257779_4.1 => bucket-5 shard1 timestamp2)
+  4.1.9 For any entry returned in 4.1.8 (it's some info like: 1_1490768519.257779_4.1 => some info like bucket-5 shard1 has modification timestamp2)
         if it's not already in progress (checked by the marker_tracker created in 4.1.3) or not duplicated, 
         handle it by RGWDataSyncSingleEntryCR.
            A. parse the entry to get bucket-name:bucket-5, bucket-shard:shard1,
            B. call RGWRunBucketSyncCoroutine
                a. get xattrs from local ceph cluster (RGWReadBucketSyncStatusCoroutine)
-                       pool: {zone}.rgw.log 
-                       obj: bucket.sync-status.{remote-zone-id}:{bucketname}:{bucket_id}:{shard_id}
+                       local pool: {secondary-zone}.rgw.log 
+                       local obj : bucket.sync-status.{remote-zone-id}:{bucketname}:{bucket_id}:{shard_id}
                   the xattrs include:
                        full_marker
                        inc_marker
@@ -809,7 +1047,18 @@ RGWDataSyncCR:
                       set state as StateIncrementalSync (do incremental sync next time)
                e. if state got in step a is StateIncrementalSync,
                       call RGWBucketShardIncrementalSyncCR
+                            lock obj=bucket.sync-status.{remote-zone-id}:{bucketname}:{bucket_id}:{shard_id} a period of lock_duration
+                            create another marker_tracker(we call it {marker_tracker}_1) (RGWBucketIncSyncShardMarkerTrack), 
+                                  unlike the marker_tracker in step 4.1.3 (update marker of data log shard), it used to update 
+                                  marker of the bucket shard.
+                            list bucket shard logs from source/remote zone, that is omap KV pairs of 
+                                   remote pool: {source_zone}.rgw.buckets.index
+                                   remote obj : .dir.{key-of-bucket-B}.S
+                            for each entry returned, syncing that obj if it's CLS_RGW_STATE_COMPLETE;
+                            {marker_tracker}_1->flush(), that's to update the marker in obj:
+                                   local pool: {secondary_zone}.rgw.log
+                                   local obj : bucket.sync-status.{remote-zone-id}:{bucket-0}:{bucket_id}:0
            C. marker_tracker->finish ---> ... ---> marker_tracker->store_marker. 
               Update new marker as content of the following object in local ceph cluster (See 4.1.3 and 4.1.7)
-                   pool: {zone}.rgw.log
-                   obj: datalog.sync-status.shard.{remote-zone-id}.X
+                   local pool: {secondary-zone}.rgw.log
+                   local obj:  datalog.sync-status.shard.{remote-zone-id}.X
