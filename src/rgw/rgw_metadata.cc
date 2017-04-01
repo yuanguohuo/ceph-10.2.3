@@ -499,10 +499,16 @@ int RGWMetadataManager::register_handler(RGWMetadataHandler *handler)
 {
   string type = handler->get_type();
 
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWMetadataManager::register_handler, type=" << type << dendl;
+
   if (handlers.find(type) != handlers.end())
+  {
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWMetadataManager::register_handler, type=" << type << " already exists" << dendl;
     return -EINVAL;
+  }
 
   handlers[type] = handler;
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWMetadataManager::register_handler, type=" << type << " registered" << dendl;
 
   return 0;
 }
@@ -533,6 +539,8 @@ int RGWMetadataManager::find_handler(const string& metadata_key, RGWMetadataHand
 
   parse_metadata_key(metadata_key, type, entry);
 
+  ldout(store->ctx(), 99) << "YuanguoDbg: RGWMetadataManager::find_handler, type=" << type << dendl;
+
   if (type.empty()) {
     *handler = &md_top_handler;
     return 0;
@@ -540,12 +548,14 @@ int RGWMetadataManager::find_handler(const string& metadata_key, RGWMetadataHand
 
   map<string, RGWMetadataHandler *>::iterator iter = handlers.find(type);
   if (iter == handlers.end())
+  {
+    ldout(store->ctx(), 99) << "YuanguoDbg: RGWMetadataManager::find_handler, type=" << type << " not found" << dendl;
     return -ENOENT;
+  }
 
   *handler = iter->second;
 
   return 0;
-
 }
 
 int RGWMetadataManager::get(string& metadata_key, Formatter *f)
