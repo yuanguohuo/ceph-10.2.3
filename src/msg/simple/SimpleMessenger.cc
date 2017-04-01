@@ -299,7 +299,9 @@ int SimpleMessenger::bind(const entity_addr_t &bind_addr)
 
   // bind to a socket
   set<int> avoid_ports;
-  int r = accepter.bind(bind_addr, avoid_ports);
+
+  //Yuanguo: bind, listen, also set my_inst.addr of this messenger!
+  int r = accepter.bind(bind_addr, avoid_ports); 
   if (r >= 0)
     did_bind = true;
   return r;

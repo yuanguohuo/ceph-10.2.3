@@ -163,10 +163,10 @@ int Accepter::bind(const entity_addr_t &bind_addr, const set<int>& avoid_ports)
   }
   
   msgr->set_myaddr(bind_addr);
-  if (bind_addr != entity_addr_t())
-    msgr->learned_addr(bind_addr);
+  if (bind_addr != entity_addr_t()) //Yuanguo: if addr just set to msgr (that's bind_addr) is not blank,
+    msgr->learned_addr(bind_addr);  //Yuanguo: msgr init local connection, and set need_addr=false (I've got addr, not need addr any more!!!)
   else
-    assert(msgr->get_need_addr());  // should still be true.
+    assert(msgr->get_need_addr());  // should still be true.   //Yuanguo: the addr just set is blank, I still need addr !!!
 
   if (msgr->get_myaddr().get_port() == 0) {
     msgr->set_myaddr(listen_addr);
@@ -175,7 +175,7 @@ int Accepter::bind(const entity_addr_t &bind_addr, const set<int>& avoid_ports)
   addr.nonce = nonce;
   msgr->set_myaddr(addr);
 
-  msgr->init_local_connection();
+  msgr->init_local_connection(); //Yuanguo: myaddr is set again, init local connection again, why init it above ???
 
   ldout(msgr->cct,1) << "accepter.bind my_inst.addr is " << msgr->get_myaddr()
 		     << " need_addr=" << msgr->get_need_addr() << dendl;

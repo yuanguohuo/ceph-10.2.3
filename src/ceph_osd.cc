@@ -527,6 +527,8 @@ int main(int argc, const char **argv)
 
   ms_objecter->set_default_policy(Messenger::Policy::lossy_client(0, CEPH_FEATURE_OSDREPLYMUX));
 
+  //Yuanguo: messenger's accepter bind and listen,
+  //         messenger's my_inst.addr is also set to the given addr (and port is chosen);
   r = ms_public->bind(g_conf->public_addr);
   if (r < 0)
     exit(1);
@@ -543,6 +545,9 @@ int main(int argc, const char **argv)
   // hb back should bind to same ip as cluster_addr (if specified)
   entity_addr_t hb_back_addr = g_conf->osd_heartbeat_addr;
   if (hb_back_addr.is_blank_ip()) {
+    //Yuanguo: I didn't see osd_heartbeat_addr was initialized anywhere (check pick_addresses
+    //         function above, which initialized cluster_addr and public_addr),  so hb_back_addr 
+    //         is always blank here, thus it is set to cluster_addr as below.
     hb_back_addr = g_conf->cluster_addr;
     if (hb_back_addr.is_ip())
       hb_back_addr.set_port(0);
