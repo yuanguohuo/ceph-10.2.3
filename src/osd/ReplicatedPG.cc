@@ -1589,6 +1589,8 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   m->finish_decode();
   m->clear_payload();
 
+	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, reqid=[" << m->get_reqid().name << ", " << m->get_reqid().tid << "] oid=" << m->get_oid() << " pgid=" << m->get_pg() << " flags=" << m->get_flags() << dendl;
+
   if (m->has_flag(CEPH_OSD_FLAG_PARALLELEXEC)) {
     // not implemented.
     osd->reply_op_error(op, -EINVAL);
@@ -1596,6 +1598,7 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   }
 
   if (op->rmw_flags == 0) {
+	  dout(99) << "YuanguoDbg: ReplicatedPG::do_op, call osd->init_op_flags" << dendl;
     int r = osd->osd->init_op_flags(op);
     if (r) {
       osd->reply_op_error(op, r);
@@ -1603,18 +1606,20 @@ void ReplicatedPG::do_op(OpRequestRef& op)
     }
   }
 
+	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, rmw_flags=" << op->rmw_flags << " flags=" << m->get_flags() << dendl;
+
   if ((m->get_flags() & (CEPH_OSD_FLAG_BALANCE_READS |
-			 CEPH_OSD_FLAG_LOCALIZE_READS)) &&
-      op->may_read() &&
-      !(op->may_write() || op->may_cache())) {
+			 CEPH_OSD_FLAG_LOCALIZE_READS)) &&       //Yuanguo: balance or localize
+      op->may_read() &&                        //Yuanguo: AND is read op
+      !(op->may_write() || op->may_cache())) { //Yuanguo: AND is not write or cache op
     // balanced reads; any replica will do
-    if (!(is_primary() || is_replica())) {
+    if (!(is_primary() || is_replica())) {     //Yuanguo: I am not primary or replica osd, must be misdirected to me!
       osd->handle_misdirected_op(this, op);
       return;
     }
-  } else {
+  } else { //Yuanguo: write or cache op must be handled by primary; read op without balance/localize must be handled by primary;
     // normal case; must be primary
-    if (!is_primary()) {
+    if (!is_primary()) {   //Yuanguo: I am not primary osd, must be misdirected to me!
       osd->handle_misdirected_op(this, op);
       return;
     }
@@ -1633,9 +1638,18 @@ void ReplicatedPG::do_op(OpRequestRef& op)
     return;
   }
 
+	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, oid=" << m->get_oid() 
+    << " object_locator=[" << m->get_object_locator().pool << ", " << m->get_object_locator().key << ", " << m->get_object_locator().nspace << ", " << m->get_object_locator().hash << "]" 
+    << " pg=[" << m->get_pg().m_pool << ", " << m->get_pg().m_seed << ", " << m->get_pg().m_preferred << "]" 
+    << " info.pgid.pgid=[" << info.pgid.pgid.m_pool << ", " << info.pgid.pgid.m_seed << ", " << info.pgid.pgid.m_preferred  << "]"
+    << " info.pgid.shard=[" << info.pgid.shard.id << "]"
+    << dendl;
+
   hobject_t head(m->get_oid(), m->get_object_locator().key,
 		 CEPH_NOSNAP, m->get_pg().ps(),
 		 info.pgid.pool(), m->get_object_locator().nspace);
+
+	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, head=" << head << dendl; 
 
   // object name too long?
   if (m->get_oid().name.size() > g_conf->osd_max_object_name_len) {
@@ -1797,7 +1811,9 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   }
 
   // dup/replay?
-  if (op->may_write() || op->may_cache()) {
+  if (op->may_write() || op->may_cache()) 
+  {
+	  dout(99) << "YuanguoDbg: ReplicatedPG::do_op, write or cache op" << dendl; 
     // warning: we will get back *a* request for this reqid, but not
     // necessarily the most recent.  this happens with flush and
     // promote ops, but we can't possible have both in our log where
@@ -1805,43 +1821,69 @@ void ReplicatedPG::do_op(OpRequestRef& op)
     // purposes here it doesn't matter which one we get.
     eversion_t replay_version;
     version_t user_version;
-    bool got = pg_log.get_log().get_request(
-      m->get_reqid(), &replay_version, &user_version);
-    if (got) {
-      dout(3) << __func__ << " dup " << m->get_reqid()
-	      << " was " << replay_version << dendl;
-      if (already_complete(replay_version)) {
-	osd->reply_op_error(op, 0, replay_version, user_version);
-      } else {
-	if (m->wants_ack()) {
-	  if (already_ack(replay_version)) {
-	    MOSDOpReply *reply = new MOSDOpReply(m, 0, get_osdmap()->get_epoch(), 0, false);
-	    reply->add_flags(CEPH_OSD_FLAG_ACK);
-	    reply->set_reply_versions(replay_version, user_version);
-	    osd->send_message_osd_client(reply, m->get_connection());
-	  } else {
-	    dout(10) << " waiting for " << replay_version << " to ack" << dendl;
-	    waiting_for_ack[replay_version].push_back(make_pair(op, user_version));
-	  }
-	}
-	dout(10) << " waiting for " << replay_version << " to commit" << dendl;
+    bool got = pg_log.get_log().get_request(m->get_reqid(), &replay_version, &user_version);
+    if (got) 
+    {
+      dout(3) << __func__ << " dup " << m->get_reqid() << " was " << replay_version << dendl;
+      if (already_complete(replay_version)) 
+      {
+	      dout(99) << "YuanguoDbg: ReplicatedPG::do_op, already_complete " << replay_version << dendl; 
+        osd->reply_op_error(op, 0, replay_version, user_version);
+      } 
+      else 
+      {
+	      dout(99) << "YuanguoDbg: ReplicatedPG::do_op, NOT already_complete " << replay_version << dendl; 
+        if (m->wants_ack()) 
+        {
+          dout(99) << "YuanguoDbg: ReplicatedPG::do_op, m wans ack" << dendl; 
+
+          if (already_ack(replay_version)) 
+          {
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_op, already_ack " << replay_version << dendl; 
+
+            MOSDOpReply *reply = new MOSDOpReply(m, 0, get_osdmap()->get_epoch(), 0, false);
+            reply->add_flags(CEPH_OSD_FLAG_ACK);
+            reply->set_reply_versions(replay_version, user_version);
+            osd->send_message_osd_client(reply, m->get_connection());
+          } 
+          else 
+          {
+            dout(10) << " waiting for " << replay_version << " to ack" << dendl;
+            waiting_for_ack[replay_version].push_back(make_pair(op, user_version));
+	        }
+        }
+        dout(10) << " waiting for " << replay_version << " to commit" << dendl;
         // always queue ondisk waiters, so that we can requeue if needed
-	waiting_for_ondisk[replay_version].push_back(make_pair(op, user_version));
-	op->mark_delayed("waiting for ondisk");
+        waiting_for_ondisk[replay_version].push_back(make_pair(op, user_version));
+        op->mark_delayed("waiting for ondisk");
       }
       return;
+    }
+    //Yuanguo: else branch is added by Yuanguo for log
+    else
+    {
+	    dout(99) << "YuanguoDbg: ReplicatedPG::do_op, " << m->get_reqid() << " was not found in PGLog" << dendl; 
     }
   }
 
   ObjectContextRef obc;
   bool can_create = op->may_write() || op->may_cache();
   hobject_t missing_oid;
+
+	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, oid=" << m->get_oid() 
+    << " object_locator=[" << m->get_object_locator().pool << ", " << m->get_object_locator().key << ", " << m->get_object_locator().nspace << ", " << m->get_object_locator().hash << "]" 
+    << " snapid=[" << m->get_snapid() << "]" 
+    << " pg=[" << m->get_pg().m_pool << ", " << m->get_pg().m_seed << ", " << m->get_pg().m_preferred << "]" 
+    << dendl;
+
   hobject_t oid(m->get_oid(),
 		m->get_object_locator().key,
 		m->get_snapid(),
 		m->get_pg().ps(),
 		m->get_object_locator().get_pool(),
 		m->get_object_locator().nspace);
+
+	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, oid=" << oid << " can_create=" << can_create <<  dendl; 
 
   // io blocked on obc?
   if (!m->has_flag(CEPH_OSD_FLAG_FLUSH) &&
@@ -1854,32 +1896,38 @@ void ReplicatedPG::do_op(OpRequestRef& op)
     m->has_flag(CEPH_OSD_FLAG_MAP_SNAP_CLONE),
     &missing_oid);
 
-  if (r == -EAGAIN) {
+	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, missing_oid=" << missing_oid << " r=" << r << dendl; 
+
+  if (r == -EAGAIN) 
+  {
     // If we're not the primary of this OSD, and we have
     // CEPH_OSD_FLAG_LOCALIZE_READS set, we just return -EAGAIN. Otherwise,
     // we have to wait for the object.
     if (is_primary() ||
-	(!(m->has_flag(CEPH_OSD_FLAG_BALANCE_READS)) &&
-	 !(m->has_flag(CEPH_OSD_FLAG_LOCALIZE_READS)))) {
+	     (!(m->has_flag(CEPH_OSD_FLAG_BALANCE_READS)) && !(m->has_flag(CEPH_OSD_FLAG_LOCALIZE_READS)))) 
+    {
+      dout(99) << "YuanguoDbg: ReplicatedPG::do_op, wait for the object because I am primary or not balance/localize read" << dendl; 
       // missing the specific snap we need; requeue and wait.
       assert(!op->may_write()); // only happens on a read/cache
       wait_for_unreadable_object(missing_oid, op);
       return;
     }
-  } else if (r == 0) {
-    if (is_unreadable_object(obc->obs.oi.soid)) {
-      dout(10) << __func__ << ": clone " << obc->obs.oi.soid
-	       << " is unreadable, waiting" << dendl;
+  }
+  else if (r == 0) 
+  {
+    if (is_unreadable_object(obc->obs.oi.soid)) 
+    {
+      dout(10) << __func__ << ": clone " << obc->obs.oi.soid << " is unreadable, waiting" << dendl;
       wait_for_unreadable_object(obc->obs.oi.soid, op);
       return;
     }
 
     // degraded object?  (the check above was for head; this could be a clone)
     if (write_ordered &&
-	obc->obs.oi.soid.snap != CEPH_NOSNAP &&
-	is_degraded_or_backfilling_object(obc->obs.oi.soid)) {
-      dout(10) << __func__ << ": clone " << obc->obs.oi.soid
-	       << " is degraded, waiting" << dendl;
+	      obc->obs.oi.soid.snap != CEPH_NOSNAP &&
+	      is_degraded_or_backfilling_object(obc->obs.oi.soid)) 
+    {
+      dout(10) << __func__ << ": clone " << obc->obs.oi.soid << " is degraded, waiting" << dendl;
       wait_for_degraded_object(obc->obs.oi.soid, op);
       return;
     }

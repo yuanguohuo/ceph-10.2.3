@@ -150,8 +150,8 @@ struct PGLog : DoutPrefixProvider {
     }
 
     bool logged_req(const osd_reqid_t &r) const {
-      if (!(indexed_data & PGLOG_INDEXED_CALLER_OPS)) {
-        index_caller_ops();
+      if (!(indexed_data & PGLOG_INDEXED_CALLER_OPS)) { //Yuanguo: we haven't built index for caller ops;
+        index_caller_ops(); //Yuanguo: build index for caller ops;
       }
       if (!caller_ops.count(r)) {
         if (!(indexed_data & PGLOG_INDEXED_EXTRA_CALLER_OPS)) {
@@ -384,6 +384,11 @@ struct PGLog : DoutPrefixProvider {
       log.back().mod_desc.trim_bl();
 
       // riter previously pointed to the previous entry
+      //Yuanguo:  if the list contains 1, 2, 3, and riter = list.rbegin(), then ritr points to 3; 
+      //   now, list.push_back(4);
+      //   because ritr equals to list.rbegin(), it points to 4 now.
+      //   if you still want it to point to 3, you need to ++ritr.
+      //   By the way, after this, list.push_back(5), ritr still points to 3;
       if (rollback_info_trimmed_to_riter == log.rbegin())
 	++rollback_info_trimmed_to_riter;
 

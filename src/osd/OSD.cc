@@ -9064,11 +9064,16 @@ int OSD::init_op_flags(OpRequestRef& op)
   MOSDOp *m = static_cast<MOSDOp*>(op->get_req());
   vector<OSDOp>::iterator iter;
 
+	dout(99) << "YuanguoDbg: OSD::init_op_flags, reqid=[" << m->get_reqid().name << ", " << m->get_reqid().tid << "] oid=" << m->get_oid() << " pgid=" << m->get_pg() << dendl;
+
   // client flags have no bearing on whether an op is a read, write, etc.
   op->rmw_flags = 0;
 
   // set bits based on op codes, called methods.
   for (iter = m->ops.begin(); iter != m->ops.end(); ++iter) {
+
+	  dout(99) << "YuanguoDbg: OSD::init_op_flags, OSDOp.op=[" << iter->op.op << ", " << iter->op.flags << "] OSDOp.soid=" << iter->soid << dendl;
+
     if (ceph_osd_op_mode_modify(iter->op.op))
       op->set_write();
     if (ceph_osd_op_mode_read(iter->op.op))
