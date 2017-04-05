@@ -508,8 +508,8 @@ struct ceph_osd_request_head {
   void print(ostream& out) const {
     out << "osd_op(";
     if (!partial_decode_needed) {
-      out << get_reqid() << ' ';
-      out << pgid;
+      out << get_reqid() << ' ';   //Yuanguo: client.4135.0:1  client.4135 is the client handle; 
+      out << pgid;                 //Yuanguo: 1.df84676b       1 is pool id; df84676b is m_seed 
       if (!final_decode_needed) {
 	out << ' ';
 	if (!oloc.nspace.empty())

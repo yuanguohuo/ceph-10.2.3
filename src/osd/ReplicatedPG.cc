@@ -1589,6 +1589,8 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   m->finish_decode();
   m->clear_payload();
 
+  //Yuanguo:  m->get_reqid().name is the client handle, such client.4135;  
+  //          m->get_pg(): pool.m_seed, such as 1.df84676b; but the dirname in osd.x/current/ is "1.2b", why??
 	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, reqid=[" << m->get_reqid().name << ", " << m->get_reqid().tid << "] oid=" << m->get_oid() << " pgid=" << m->get_pg() << " flags=" << m->get_flags() << dendl;
 
   if (m->has_flag(CEPH_OSD_FLAG_PARALLELEXEC)) {
@@ -1638,6 +1640,9 @@ void ReplicatedPG::do_op(OpRequestRef& op)
     return;
   }
 
+  //Yuanguo: m->get_pg().m_seed = df84676b;   the pgid is 1.df84676b
+  //         info.pgid.pgid.m_seed = 2b;      the dirname in osd.x/current/ is "1.2b";
+  //         the former is given by the client, it should be mapped to the latter somehow. How??
 	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, oid=" << m->get_oid() 
     << " object_locator=[" << m->get_object_locator().pool << ", " << m->get_object_locator().key << ", " << m->get_object_locator().nspace << ", " << m->get_object_locator().hash << "]" 
     << " pg=[" << m->get_pg().m_pool << ", " << m->get_pg().m_seed << ", " << m->get_pg().m_preferred << "]" 
@@ -1683,6 +1688,10 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   }
 
   // blacklisted?
+  // Yuanguo: where does the blacklist come from? One path is:
+  //          OSD::_dispatch -->
+  //          OSD::handle_osd_map -->
+  //          OSDMap::apply_incremental
   if (get_osdmap()->is_blacklisted(m->get_source_addr())) {
     dout(10) << "do_op " << m->get_source_addr() << " is blacklisted" << dendl;
     osd->reply_op_error(op, -EBLACKLISTED);
@@ -1821,6 +1830,7 @@ void ReplicatedPG::do_op(OpRequestRef& op)
     // purposes here it doesn't matter which one we get.
     eversion_t replay_version;
     version_t user_version;
+    //Yuanguo: m->get_reqid() looks like: client.4135.0:1,  client.4135 is the client handle;
     bool got = pg_log.get_log().get_request(m->get_reqid(), &replay_version, &user_version);
     if (got) 
     {
@@ -1934,19 +1944,24 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   }
 
   bool in_hit_set = false;
-  if (hit_set) {
-    if (obc.get()) {
+  if (hit_set) 
+  {
+    if (obc.get()) 
+    {
       if (obc->obs.oi.soid != hobject_t() && hit_set->contains(obc->obs.oi.soid))
-	in_hit_set = true;
-    } else {
+        in_hit_set = true;
+    }
+    else 
+    {
       if (missing_oid != hobject_t() && hit_set->contains(missing_oid))
         in_hit_set = true;
     }
-    if (!op->hitset_inserted) {
+    if (!op->hitset_inserted) 
+    {
       hit_set->insert(oid);
       op->hitset_inserted = true;
-      if (hit_set->is_full() ||
-          hit_set_start_stamp + pool.info.hit_set_period <= m->get_recv_stamp()) {
+      if (hit_set->is_full() || hit_set_start_stamp + pool.info.hit_set_period <= m->get_recv_stamp()) 
+      {
         hit_set_persist();
       }
     }
@@ -8992,49 +9007,59 @@ ObjectContextRef ReplicatedPG::get_object_context(const hobject_t& soid,
     (pg_log.get_log().objects.count(soid) &&
       pg_log.get_log().objects.find(soid)->second->op ==
       pg_log_entry_t::LOST_REVERT));
+
   ObjectContextRef obc = object_contexts.lookup(soid);  //Yuanguo: find in the cache;
   osd->logger->inc(l_osd_object_ctx_cache_total);
-  if (obc) {
+  if(obc) //Yuanguo: in the cache;
+  {
     osd->logger->inc(l_osd_object_ctx_cache_hit);
-    dout(10) << __func__ << ": found obc in cache: " << obc
-	     << dendl;
-  } else {   //Yuanguo: not in the cache;
+    dout(10) << __func__ << ": found obc in cache: " << obc << dendl;
+  } 
+  else    //Yuanguo: not in the cache;
+  {
     dout(10) << __func__ << ": obc NOT found in cache: " << soid << dendl;
     // check disk
     bufferlist bv;
-    if (attrs) {   //Yuanguo: not in the cache, but provided by param "attrs"
+    if(attrs) //Yuanguo: not in the cache, but provided by param "attrs"
+    {
+      dout(99) << "YuanguoDbg: " << __func__ << ": not in the cache, but provided by param attrs: " << soid << dendl;
       assert(attrs->count(OI_ATTR));
       bv = attrs->find(OI_ATTR)->second;
-    } else { //Yuanguo: not in the cache, and not provided by param "attrs"
+    }
+    else //Yuanguo: not in the cache, and not provided by param "attrs"
+    {
+      dout(99) << "YuanguoDbg: " << __func__ << ": not in the cache, and not provided by param attrs: " << soid << dendl;
       int r = pgbackend->objects_get_attr(soid, OI_ATTR, &bv); //Yuanguo: get attrs from objectstore (filestore)
-      if (r < 0) {  //Yuanguo: failed to get attrs from objectstore (filestore)
-	if (!can_create) {
-	  dout(10) << __func__ << ": no obc for soid "
-		   << soid << " and !can_create"
-		   << dendl;
-	  return ObjectContextRef();   // -ENOENT! //Yuanguo: not in cache, not provided by param "attrs", not in objectstore (filestore), and can_create=false
-	}
+      if (r < 0)  //Yuanguo: not in the cache, not provided by param "attrs", and failed to get attrs from objectstore (filestore)
+      {
+	      if (!can_create) //Yuanguo: not in the cache, not provided by param "attrs", not in objectstore (filestore) and cannot create!
+        {
+	        dout(10) << __func__ << ": no obc for soid " << soid << " and !can_create" << dendl;
+	        return ObjectContextRef();   // -ENOENT! 
+	      }
 
-  //Yuanguo: not in cache, not provided by param "attrs", not in objectstore (filestore), but can_create=true
-	dout(10) << __func__ << ": no obc for soid "
-		 << soid << " but can_create"
-		 << dendl;
-	// new object.
-	object_info_t oi(soid);
-	SnapSetContext *ssc = get_snapset_context(
-	  soid, true, 0, false);
-	obc = create_object_context(oi, ssc);  //Yuanguo, create it and set obc->obs.exists = false;
-	dout(10) << __func__ << ": " << obc << " " << soid
-		 << " " << obc->rwstate
-		 << " oi: " << obc->obs.oi
-		 << " ssc: " << obc->ssc
-		 << " snapset: " << obc->ssc->snapset << dendl;
-	return obc;
+        //Yuanguo: not in cache, not provided by param "attrs", not in objectstore (filestore), but can create
+	      dout(10) << __func__ << ": no obc for soid " << soid << " but can_create" << dendl;
+	
+        // new object.
+	      object_info_t oi(soid);
+	      SnapSetContext *ssc = get_snapset_context(soid, true, 0, false);
+	
+        obc = create_object_context(oi, ssc);  //Yuanguo, create it and set obc->obs.exists = false;
+	
+        dout(10) << __func__ << ": " << obc << " " << soid << " " << obc->rwstate << " oi: " << obc->obs.oi 
+              << " ssc: " << obc->ssc << " snapset: " << obc->ssc->snapset << dendl;
+	
+        return obc;
       }
+
+      dout(99) << "YuanguoDbg: " << __func__ << ": not in the cache, and not provided by param attrs, but found in objectstore: " << soid << dendl;
     }
 
     //Yuanguo: not in the cache, but attrs were either provided as param "attrs", or retrieved from objectstore (filestore),
     //     in both cases, the obc is "existing", create it based on attrs and set obc->obs.exists = true.
+    dout(99) << "YuanguoDbg: " << __func__ << ": create based on attrs provided by param or retrieved from objectstore: " << soid << dendl;
+
     object_info_t oi(bv);
 
     assert(oi.soid.pool == (int64_t)info.pgid.pool());
@@ -9042,35 +9067,34 @@ ObjectContextRef ReplicatedPG::get_object_context(const hobject_t& soid,
     obc = object_contexts.lookup_or_create(oi.soid);
     obc->destructor_callback = new C_PG_ObjectContext(this, obc.get());
     obc->obs.oi = oi;
-    obc->obs.exists = true;
+    obc->obs.exists = true;  //Yuanguo: existing!
 
-    obc->ssc = get_snapset_context(
-      soid, true,
-      soid.has_snapset() ? attrs : 0);
+    obc->ssc = get_snapset_context(soid, true, soid.has_snapset() ? attrs : 0);
 
     if (is_active())
       populate_obc_watchers(obc);
 
-    if (pool.info.require_rollback()) {
-      if (attrs) {
-	obc->attr_cache = *attrs;
-      } else {
-	int r = pgbackend->objects_get_attrs(
-	  soid,
-	  &obc->attr_cache);
-	assert(r == 0);
+    if (pool.info.require_rollback()) 
+    {
+      if (attrs) 
+      {
+        obc->attr_cache = *attrs;
+      } 
+      else 
+      {
+        int r = pgbackend->objects_get_attrs(soid, &obc->attr_cache);
+        assert(r == 0);
       }
     }
 
-    dout(10) << __func__ << ": creating obc from disk: " << obc
-	     << dendl;
+    dout(10) << __func__ << ": creating obc from disk: " << obc << dendl;
   }
+
   assert(obc->ssc);
-  dout(10) << __func__ << ": " << obc << " " << soid
-	   << " " << obc->rwstate
-	   << " oi: " << obc->obs.oi
-	   << " ssc: " << obc->ssc
-	   << " snapset: " << obc->ssc->snapset << dendl;
+
+  dout(10) << __func__ << ": " << obc << " " << soid << " " << obc->rwstate << " oi: " << obc->obs.oi << " ssc: " << obc->ssc
+	       << " snapset: " << obc->ssc->snapset << dendl;
+
   return obc;
 }
 
@@ -10113,6 +10137,8 @@ void ReplicatedPG::on_shutdown()
 
 void ReplicatedPG::on_activate()
 {
+  dout(99) << "YuanguoDbg: ReplicatedPG::on_activate Enter" << dendl;
+
   // all clean?
   if (needs_recovery()) {
     dout(10) << "activate not all replicas are up-to-date, queueing recovery" << dendl;
@@ -10157,6 +10183,7 @@ void ReplicatedPG::on_activate()
     }
   }
 
+  dout(99) << "YuanguoDbg: ReplicatedPG::on_activate, hit_set_setup" << dendl;
   hit_set_setup();
   agent_setup();
 }
@@ -11536,16 +11563,15 @@ void ReplicatedPG::hit_set_clear()
 
 void ReplicatedPG::hit_set_setup()
 {
-  if (!is_active() ||
-      !is_primary()) {
+  if (!is_active() || !is_primary()) 
+  {
     hit_set_clear();
     return;
   }
 
-  if (is_active() && is_primary() &&
-      (!pool.info.hit_set_count ||
-       !pool.info.hit_set_period ||
-       pool.info.hit_set_params.get_type() == HitSet::TYPE_NONE)) {
+  if (is_active() && is_primary() &&  //Yuanguo: allowed to remove hit set objects
+      (!pool.info.hit_set_count || !pool.info.hit_set_period || pool.info.hit_set_params.get_type() == HitSet::TYPE_NONE)) //Yuanguo: should remove hit set objects 
+  {
     hit_set_clear();
 
     // only primary is allowed to remove all the hit set objects
