@@ -9073,6 +9073,7 @@ int OSD::init_op_flags(OpRequestRef& op)
   for (iter = m->ops.begin(); iter != m->ops.end(); ++iter) {
 
 	  dout(99) << "YuanguoDbg: OSD::init_op_flags, OSDOp.op=[" << iter->op.op << ", " << iter->op.flags << "] OSDOp.soid=" << iter->soid << dendl;
+    dout(99) << "YuanguoDbg: OSD::init_op_flags, OSDOp=" << (*iter) << dendl;
 
     if (ceph_osd_op_mode_modify(iter->op.op))
       op->set_write();

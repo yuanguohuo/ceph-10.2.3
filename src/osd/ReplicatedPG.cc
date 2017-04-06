@@ -1591,7 +1591,8 @@ void ReplicatedPG::do_op(OpRequestRef& op)
 
   //Yuanguo:  m->get_reqid().name is the client handle, such client.4135;  
   //          m->get_pg(): pool.m_seed, such as 1.df84676b; but the dirname in osd.x/current/ is "1.2b", why??
-	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, reqid=[" << m->get_reqid().name << ", " << m->get_reqid().tid << "] oid=" << m->get_oid() << " pgid=" << m->get_pg() << " flags=" << m->get_flags() << dendl;
+	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, reqid=[" << m->get_reqid().name << ", " << m->get_reqid().tid << "] oid=" 
+           << m->get_oid() << " pgid=" << m->get_pg() << " flags=" << m->get_flags() << " snapid=" << m->get_snapid() <<  dendl;
 
   if (m->has_flag(CEPH_OSD_FLAG_PARALLELEXEC)) {
     // not implemented.
@@ -1599,10 +1600,12 @@ void ReplicatedPG::do_op(OpRequestRef& op)
     return;
   }
 
-  if (op->rmw_flags == 0) {
+  if (op->rmw_flags == 0) 
+  {
 	  dout(99) << "YuanguoDbg: ReplicatedPG::do_op, call osd->init_op_flags" << dendl;
     int r = osd->osd->init_op_flags(op);
-    if (r) {
+    if (r) 
+    {
       osd->reply_op_error(op, r);
       return;
     }
@@ -1644,7 +1647,8 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   //         info.pgid.pgid.m_seed = 2b;      the dirname in osd.x/current/ is "1.2b";
   //         the former is given by the client, it should be mapped to the latter somehow. How??
 	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, oid=" << m->get_oid() 
-    << " object_locator=[" << m->get_object_locator().pool << ", " << m->get_object_locator().key << ", " << m->get_object_locator().nspace << ", " << m->get_object_locator().hash << "]" 
+    << " object_locator=[" << m->get_object_locator().pool << ", " << m->get_object_locator().key << ", " 
+                           << m->get_object_locator().nspace << ", " << m->get_object_locator().hash << "]" 
     << " pg=[" << m->get_pg().m_pool << ", " << m->get_pg().m_seed << ", " << m->get_pg().m_preferred << "]" 
     << " info.pgid.pgid=[" << info.pgid.pgid.m_pool << ", " << info.pgid.pgid.m_seed << ", " << info.pgid.pgid.m_preferred  << "]"
     << " info.pgid.shard=[" << info.pgid.shard.id << "]"
@@ -1881,7 +1885,8 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   hobject_t missing_oid;
 
 	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, oid=" << m->get_oid() 
-    << " object_locator=[" << m->get_object_locator().pool << ", " << m->get_object_locator().key << ", " << m->get_object_locator().nspace << ", " << m->get_object_locator().hash << "]" 
+    << " object_locator=[" << m->get_object_locator().pool << ", " << m->get_object_locator().key << ", " 
+                           << m->get_object_locator().nspace << ", " << m->get_object_locator().hash << "]" 
     << " snapid=[" << m->get_snapid() << "]" 
     << " pg=[" << m->get_pg().m_pool << ", " << m->get_pg().m_seed << ", " << m->get_pg().m_preferred << "]" 
     << dendl;
@@ -1901,10 +1906,7 @@ void ReplicatedPG::do_op(OpRequestRef& op)
     return;
   }
 
-  int r = find_object_context(
-    oid, &obc, can_create,
-    m->has_flag(CEPH_OSD_FLAG_MAP_SNAP_CLONE),
-    &missing_oid);
+  int r = find_object_context(oid, &obc, can_create, m->has_flag(CEPH_OSD_FLAG_MAP_SNAP_CLONE), &missing_oid);
 
 	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, missing_oid=" << missing_oid << " r=" << r << dendl; 
 
@@ -1967,32 +1969,30 @@ void ReplicatedPG::do_op(OpRequestRef& op)
     }
   }
 
-  if (agent_state) {
+  if (agent_state) 
+  {
     if (agent_choose_mode(false, op))
       return;
   }
 
-  if (maybe_handle_cache(op,
-			 write_ordered,
-			 obc,
-			 r,
-			 missing_oid,
-			 false,
-			 in_hit_set))
+  if (maybe_handle_cache(op, write_ordered, obc, r, missing_oid, false,	in_hit_set))
     return;
 
-  if (r && (r != -ENOENT || !obc)) {
+  if (r && (r != -ENOENT || !obc)) 
+  {
     // copy the reqids for copy get on ENOENT
     if (r == -ENOENT &&
-	(m->ops[0].op.op == CEPH_OSD_OP_COPY_GET_CLASSIC ||
-	 m->ops[0].op.op == CEPH_OSD_OP_COPY_GET)) {
+	      (m->ops[0].op.op == CEPH_OSD_OP_COPY_GET_CLASSIC || m->ops[0].op.op == CEPH_OSD_OP_COPY_GET))
+    {
       bool classic = false;
-      if (m->ops[0].op.op == CEPH_OSD_OP_COPY_GET_CLASSIC) {
-	classic = true;
+      if (m->ops[0].op.op == CEPH_OSD_OP_COPY_GET_CLASSIC) 
+      {
+        classic = true;
       }
       fill_in_copy_get_noent(op, oid, m->ops[0], classic);
       return;
     }
+
     dout(20) << __func__ << "find_object_context got error " << r << dendl;
     osd->reply_op_error(op, r);
     return;
@@ -2000,17 +2000,15 @@ void ReplicatedPG::do_op(OpRequestRef& op)
 
   // make sure locator is consistent
   object_locator_t oloc(obc->obs.oi.soid);
-  if (m->get_object_locator() != oloc) {
-    dout(10) << " provided locator " << m->get_object_locator() 
-	     << " != object's " << obc->obs.oi.soid << dendl;
-    osd->clog->warn() << "bad locator " << m->get_object_locator() 
-		     << " on object " << oloc
-		     << " op " << *m << "\n";
+  if (m->get_object_locator() != oloc) 
+  {
+    dout(10) << " provided locator " << m->get_object_locator() << " != object's " << obc->obs.oi.soid << dendl;
+    osd->clog->warn() << "bad locator " << m->get_object_locator() << " on object " << oloc << " op " << *m << "\n";
   }
 
   // io blocked on obc?
-  if (obc->is_blocked() &&
-      !m->has_flag(CEPH_OSD_FLAG_FLUSH)) {
+  if (obc->is_blocked() && !m->has_flag(CEPH_OSD_FLAG_FLUSH)) 
+  {
     wait_for_blocked_object(obc->obs.oi.soid, op);
     return;
   }
@@ -2018,114 +2016,183 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   dout(25) << __func__ << " oi " << obc->obs.oi << dendl;
 
   // are writes blocked by another object?
-  if (obc->blocked_by) {
-    dout(10) << "do_op writes for " << obc->obs.oi.soid << " blocked by "
-	     << obc->blocked_by->obs.oi.soid << dendl;
+  if (obc->blocked_by) 
+  {
+    dout(10) << "do_op writes for " << obc->obs.oi.soid << " blocked by " << obc->blocked_by->obs.oi.soid << dendl;
     wait_for_degraded_object(obc->blocked_by->obs.oi.soid, op);
     return;
   }
 
   // src_oids
   map<hobject_t,ObjectContextRef, hobject_t::BitwiseComparator> src_obc;
-  for (vector<OSDOp>::iterator p = m->ops.begin(); p != m->ops.end(); ++p) {
+  for (vector<OSDOp>::iterator p = m->ops.begin(); p != m->ops.end(); ++p) 
+  {
     OSDOp& osd_op = *p;
 
+	  dout(99) << "YuanguoDbg: ReplicatedPG::do_op, osd_op.op=[" << osd_op.op.op << ", " << osd_op.op.flags << "] osd_op.soid=" << osd_op.soid << dendl;
+	  dout(99) << "YuanguoDbg: ReplicatedPG::do_op, osd_op=" << osd_op << dendl;
+
     // make sure LIST_SNAPS is on CEPH_SNAPDIR and nothing else
-    if (osd_op.op.op == CEPH_OSD_OP_LIST_SNAPS &&
-	m->get_snapid() != CEPH_SNAPDIR) {
+    if (osd_op.op.op == CEPH_OSD_OP_LIST_SNAPS && m->get_snapid() != CEPH_SNAPDIR) 
+    {
       dout(10) << "LIST_SNAPS with incorrect context" << dendl;
       osd->reply_op_error(op, -EINVAL);
       return;
     }
 
     if (!ceph_osd_op_type_multi(osd_op.op.op))
+    {
+      dout(99) << "YuanguoDbg: ReplicatedPG::do_op, non multi op: " << osd_op.op.op << dendl; 
       continue;
-    if (osd_op.soid.oid.name.length()) {
+    }
+
+    //Yuanguo: code below is for multi op type;
+    dout(99) << "YuanguoDbg: ReplicatedPG::do_op, multi op: " << osd_op.op.op << dendl; 
+
+    if (osd_op.soid.oid.name.length()) 
+    {
+      dout(99) << "YuanguoDbg: ReplicatedPG::do_op, oid.name=" << osd_op.soid.oid.name << dendl; 
+
       object_locator_t src_oloc;
       get_src_oloc(m->get_oid(), m->get_object_locator(), src_oloc);
-      hobject_t src_oid(osd_op.soid, src_oloc.key, m->get_pg().ps(),
-			info.pgid.pool(), m->get_object_locator().nspace);
-      if (!src_obc.count(src_oid)) {
-	ObjectContextRef sobc;
-	hobject_t wait_oid;
-	int r;
+      hobject_t src_oid(osd_op.soid, src_oloc.key, m->get_pg().ps(), info.pgid.pool(), m->get_object_locator().nspace);
 
-	if (src_oid.is_head() && is_missing_object(src_oid)) {
-	  wait_for_unreadable_object(src_oid, op);
-	} else if ((r = find_object_context(
-		      src_oid, &sobc, false, false,
-		      &wait_oid)) == -EAGAIN) {
-	  // missing the specific snap we need; requeue and wait.
-	  wait_for_unreadable_object(wait_oid, op);
-	} else if (r) {
-	  if (!maybe_handle_cache(op, write_ordered, sobc, r, wait_oid, true))
-	    osd->reply_op_error(op, r);
-	} else if (sobc->obs.oi.is_whiteout()) {
-	  osd->reply_op_error(op, -ENOENT);
-	} else {
-	  if (sobc->obs.oi.soid.get_key() != obc->obs.oi.soid.get_key() &&
-		   sobc->obs.oi.soid.get_key() != obc->obs.oi.soid.oid.name &&
-		   sobc->obs.oi.soid.oid.name != obc->obs.oi.soid.get_key()) {
-	    dout(1) << " src_oid " << sobc->obs.oi.soid << " != "
-		  << obc->obs.oi.soid << dendl;
-	    osd->reply_op_error(op, -EINVAL);
-	  } else if (is_degraded_or_backfilling_object(sobc->obs.oi.soid) ||
-		   (check_src_targ(sobc->obs.oi.soid, obc->obs.oi.soid))) {
-	    if (is_degraded_or_backfilling_object(sobc->obs.oi.soid)) {
-	      wait_for_degraded_object(sobc->obs.oi.soid, op);
-	    } else {
-	      waiting_for_degraded_object[sobc->obs.oi.soid].push_back(op);
-	      op->mark_delayed("waiting for degraded object");
-	    }
-	    dout(10) << " writes for " << obc->obs.oi.soid << " now blocked by "
-		     << sobc->obs.oi.soid << dendl;
-	    obc->blocked_by = sobc;
-	    sobc->blocking.insert(obc);
-	  } else {
-	    dout(10) << " src_oid " << src_oid << " obc " << src_obc << dendl;
-	    src_obc[src_oid] = sobc;
-	    continue;
-	  }
-	}
-	// Error cleanup below
-      } else {
-	continue;
+      dout(99) << "YuanguoDbg: ReplicatedPG::do_op, src_oloc=" << src_oloc << " src_oid=" << src_oid << dendl; 
+
+      if (!src_obc.count(src_oid))
+      {
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_op, src_obc does not contain " << src_oid << dendl; 
+
+        ObjectContextRef sobc;
+        hobject_t wait_oid;
+	      int r;
+
+        if (src_oid.is_head() && is_missing_object(src_oid))
+        {
+          dout(99) << "YuanguoDbg: ReplicatedPG::do_op, is head and missing: " << src_oid << dendl;
+          wait_for_unreadable_object(src_oid, op);
+        } 
+        else if ((r = find_object_context(src_oid, &sobc, false, false, &wait_oid)) == -EAGAIN) 
+        {
+          dout(99) << "YuanguoDbg: ReplicatedPG::do_op, find context of " << src_oid << " returns -EAGAIN" << dendl;
+          // missing the specific snap we need; requeue and wait.
+          wait_for_unreadable_object(wait_oid, op);
+	      }
+        else if (r) 
+        {
+          dout(99) << "YuanguoDbg: ReplicatedPG::do_op, find context of " << src_oid << " returns " << r << dendl;
+          if (!maybe_handle_cache(op, write_ordered, sobc, r, wait_oid, true))
+            osd->reply_op_error(op, r);
+        }
+        else if (sobc->obs.oi.is_whiteout())
+        {
+          dout(99) << "YuanguoDbg: ReplicatedPG::do_op, whiteout: " << sobc->obs.oi << dendl;
+          osd->reply_op_error(op, -ENOENT);
+	      }
+        else
+        {
+	        if (sobc->obs.oi.soid.get_key() != obc->obs.oi.soid.get_key() &&
+		          sobc->obs.oi.soid.get_key() != obc->obs.oi.soid.oid.name &&
+		          sobc->obs.oi.soid.oid.name  != obc->obs.oi.soid.get_key())
+          {
+            dout(1) << " src_oid " << sobc->obs.oi.soid << " != " << obc->obs.oi.soid << dendl;
+            osd->reply_op_error(op, -EINVAL);
+	        }
+          else if (is_degraded_or_backfilling_object(sobc->obs.oi.soid) ||
+                   (check_src_targ(sobc->obs.oi.soid, obc->obs.oi.soid)))
+          {
+            if (is_degraded_or_backfilling_object(sobc->obs.oi.soid)) 
+            {
+              dout(99) << "YuanguoDbg: ReplicatedPG::do_op, degraded or backfilling: " << sobc->obs.oi.soid << dendl;
+              wait_for_degraded_object(sobc->obs.oi.soid, op);
+            }
+            else
+            {
+              dout(99) << "YuanguoDbg: ReplicatedPG::do_op, check_src_targ returns true: " << sobc->obs.oi.soid << " " << obc->obs.oi.soid << dendl;
+              waiting_for_degraded_object[sobc->obs.oi.soid].push_back(op);
+              op->mark_delayed("waiting for degraded object");
+	          }
+
+            dout(10) << " writes for " << obc->obs.oi.soid << " now blocked by " << sobc->obs.oi.soid << dendl;
+            obc->blocked_by = sobc;
+            sobc->blocking.insert(obc);
+          }
+          else
+          {
+            dout(10) << " src_oid " << src_oid << " obc " << src_obc << dendl;
+            src_obc[src_oid] = sobc;
+            continue;
+          }
+        }
+        // Error cleanup below
+      }
+      else
+      {
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_op, src_obc contains " << src_oid << dendl; 
+        continue;
       }
       // Error cleanup below
-    } else {
+    }
+    else
+    {
       dout(10) << "no src oid specified for multi op " << osd_op << dendl;
       osd->reply_op_error(op, -EINVAL);
     }
+
+    dout(99) << "YuanguoDbg: ReplicatedPG::do_op, return early" << dendl; 
     return;
   }
 
   // any SNAPDIR op needs to have all clones present.  treat them as
   // src_obc's so that we track references properly and clean up later.
-  if (m->get_snapid() == CEPH_SNAPDIR) {
-    for (vector<snapid_t>::iterator p = obc->ssc->snapset.clones.begin();
-	 p != obc->ssc->snapset.clones.end();
-	 ++p) {
+  dout(99) << "YuanguoDbg: ReplicatedPG::do_op, snapid=" << m->get_snapid() << dendl; 
+  if (m->get_snapid() == CEPH_SNAPDIR) 
+  {
+    dout(99) << "YuanguoDbg: ReplicatedPG::do_op, clones.size=" << obc->ssc->snapset.clones.size() << dendl;
+    for (vector<snapid_t>::iterator p = obc->ssc->snapset.clones.begin(); p != obc->ssc->snapset.clones.end(); ++p) 
+    {
       hobject_t clone_oid = obc->obs.oi.soid;
       clone_oid.snap = *p;
-      if (!src_obc.count(clone_oid)) {
-	if (is_unreadable_object(clone_oid)) {
-	  wait_for_unreadable_object(clone_oid, op);
-	  return;
-	}
 
-	ObjectContextRef sobc = get_object_context(clone_oid, false);
-	if (!sobc) {
-	  if (!maybe_handle_cache(op, write_ordered, sobc, -ENOENT, clone_oid, true))
-	    osd->reply_op_error(op, -ENOENT);
-	  return;
-	} else {
-	  dout(10) << " clone_oid " << clone_oid << " obc " << sobc << dendl;
-	  src_obc[clone_oid] = sobc;
-	  continue;
-	}
-	assert(0); // unreachable
-      } else {
-	continue;
+      dout(99) << "YuanguoDbg: ReplicatedPG::do_op, clone_oid=" << clone_oid << " snap=" << *p << dendl;
+
+      if (!src_obc.count(clone_oid)) 
+      {
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_op, src_obc does not contain " << clone_oid << dendl;
+
+        if (is_unreadable_object(clone_oid)) 
+        {
+          dout(99) << "YuanguoDbg: ReplicatedPG::do_op, unreadable: " << clone_oid << dendl;
+          wait_for_unreadable_object(clone_oid, op);
+          return;
+	      }
+
+        ObjectContextRef sobc = get_object_context(clone_oid, false);
+
+        if (!sobc) 
+        {
+          dout(99) << "YuanguoDbg: ReplicatedPG::do_op, not found context of: " << clone_oid << dendl;
+
+          if (!maybe_handle_cache(op, write_ordered, sobc, -ENOENT, clone_oid, true))
+          {
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_op, not handle cache" << dendl;
+            osd->reply_op_error(op, -ENOENT);
+          }
+          return;
+        }
+        else
+        {
+          dout(10) << " clone_oid " << clone_oid << " obc " << sobc << dendl;
+          src_obc[clone_oid] = sobc;
+          continue;
+	      }
+
+        assert(0); // unreachable
+      }
+      else 
+      {
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_op, src_obc contains" << clone_oid << dendl;
+        continue;
       }
     }
   }
@@ -2133,7 +2200,10 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   OpContext *ctx = new OpContext(op, m->get_reqid(), m->ops, obc, this);
 
   if (!obc->obs.exists)
+  {
+    dout(99) << "YuanguoDbg: ReplicatedPG::do_op, not exist: " << obc->obs.oi << dendl;
     ctx->snapset_obc = get_object_context(obc->obs.oi.soid.get_snapdir(), false);
+  }
 
   /* Due to obc caching, we might have a cached non-existent snapset_obc
    * for the snapdir.  If so, we can ignore it.  Subsequent parts of the
@@ -2141,29 +2211,38 @@ void ReplicatedPG::do_op(OpRequestRef& op)
    * populated.
    */
   if (ctx->snapset_obc && !ctx->snapset_obc->obs.exists)
+  {
+    dout(99) << "YuanguoDbg: ReplicatedPG::do_op, ignore the non-existent snapset_obc for the snapdir" << dendl;
     ctx->snapset_obc = ObjectContextRef();
+  }
 
-  if (m->has_flag(CEPH_OSD_FLAG_SKIPRWLOCKS)) {
+  if (m->has_flag(CEPH_OSD_FLAG_SKIPRWLOCKS)) 
+  {
     dout(20) << __func__ << ": skipping rw locks" << dendl;
-  } else if (m->get_flags() & CEPH_OSD_FLAG_FLUSH) {
+  }
+  else if(m->get_flags() & CEPH_OSD_FLAG_FLUSH)
+  {
     dout(20) << __func__ << ": part of flush, will ignore write lock" << dendl;
 
     // verify there is in fact a flush in progress
     // FIXME: we could make this a stronger test.
     map<hobject_t,FlushOpRef, hobject_t::BitwiseComparator>::iterator p = flush_ops.find(obc->obs.oi.soid);
-    if (p == flush_ops.end()) {
+    if (p == flush_ops.end())
+    {
       dout(10) << __func__ << " no flush in progress, aborting" << dendl;
       dout(99) << "YuanguoDbg: ReplicatedPG::do_op, call reply_ctx with -EINVAL" << dendl;
       reply_ctx(ctx, -EINVAL);
       return;
     }
-  } else if (!get_rw_locks(write_ordered, ctx)) {
+  }
+  else if (!get_rw_locks(write_ordered, ctx))
+  {
     dout(20) << __func__ << " waiting for rw locks " << dendl;
     op->mark_delayed("waiting for rw locks");
     close_op_ctx(ctx);
     return;
   }
-  else  //Yuanguo: else branch is added by yuanguo, for log;
+  else //Yuanguo: else branch is added by yuanguo, for log;
   {
     //Yuanguo: MOSDOp-A and MOSDOp-B of a given object will be sent to the same OSD (omit backup OSDs for now),
     //  but this OSD has multiple threads. The lock here is to prevent more than one threads from accessing the given
@@ -2171,41 +2250,49 @@ void ReplicatedPG::do_op(OpRequestRef& op)
     dout(99) << " YuanguoDbg: ReplicatedPG::do_op, got rw locks of object: " << m->get_oid() << " r=" << r << dendl;
   }
 
-  if (r) {
+  if (r) 
+  {
     dout(20) << __func__ << " returned an error: " << r << dendl;
     close_op_ctx(ctx);
+
     dout(99) << "YuanguoDbg: ReplicatedPG::do_op, released rw locks of object: " << m->get_oid() << " because r=" << r << dendl;
     osd->reply_op_error(op, r);
     return;
   }
 
-  if (m->has_flag(CEPH_OSD_FLAG_IGNORE_CACHE)) {
+  if (m->has_flag(CEPH_OSD_FLAG_IGNORE_CACHE)) 
+  {
+    dout(99) << "YuanguoDbg: ReplicatedPG::do_op, ignore cache" << dendl;
     ctx->ignore_cache = true;
   }
 
-  if ((op->may_read()) && (obc->obs.oi.is_lost())) {
+  if ((op->may_read()) && (obc->obs.oi.is_lost())) 
+  {
     // This object is lost. Reading from it returns an error.
-    dout(20) << __func__ << ": object " << obc->obs.oi.soid
-	     << " is lost" << dendl;
+    dout(20) << __func__ << ": object " << obc->obs.oi.soid << " is lost" << dendl;
     dout(99) << "YuanguoDbg: ReplicatedPG::do_op, call reply_ctx with -ENFILE" << dendl;
     reply_ctx(ctx, -ENFILE);
     return;
   }
+
   if (!op->may_write() &&
       !op->may_cache() &&
-      (!obc->obs.exists ||
-       ((m->get_snapid() != CEPH_SNAPDIR) &&
-	obc->obs.oi.is_whiteout()))) {
+      (!obc->obs.exists || ((m->get_snapid() != CEPH_SNAPDIR) && obc->obs.oi.is_whiteout()))) 
+  {
     // copy the reqids for copy get on ENOENT
-    if (m->ops[0].op.op == CEPH_OSD_OP_COPY_GET_CLASSIC ||
-	m->ops[0].op.op == CEPH_OSD_OP_COPY_GET) {
+    if (m->ops[0].op.op == CEPH_OSD_OP_COPY_GET_CLASSIC || m->ops[0].op.op == CEPH_OSD_OP_COPY_GET) 
+    {
       bool classic = false;
-      if (m->ops[0].op.op == CEPH_OSD_OP_COPY_GET_CLASSIC) {
-	classic = true;
+      if (m->ops[0].op.op == CEPH_OSD_OP_COPY_GET_CLASSIC) 
+      {
+        classic = true;
       }
+
       fill_in_copy_get_noent(op, oid, m->ops[0], classic);
       close_op_ctx(ctx);
-      dout(99) << "YuanguoDbg: ReplicatedPG::do_op, released rw locks of object: " << m->get_oid() << " because op=CEPH_OSD_OP_COPY_GET_CLASSIC||CEPH_OSD_OP_COPY_GET" << dendl;
+
+      dout(99) << "YuanguoDbg: ReplicatedPG::do_op, released rw locks of object: " << m->get_oid() 
+               << " because op=CEPH_OSD_OP_COPY_GET_CLASSIC||CEPH_OSD_OP_COPY_GET" << dendl;
       return;
     }
 
@@ -2217,15 +2304,27 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   op->mark_started();
   ctx->src_obc.swap(src_obc);
 
+  dout(99) << "YuanguoDbg: ReplicatedPG::do_op, before execute_ctx" << dendl;
   execute_ctx(ctx);
+  dout(99) << "YuanguoDbg: ReplicatedPG::do_op, after execute_ctx" << dendl;
+
   utime_t prepare_latency = ceph_clock_now(cct);
   prepare_latency -= op->get_dequeued_time();
+
+  dout(99) << "YuanguoDbg: ReplicatedPG::do_op, prepare_latency=" << prepare_latency << dendl;
+
   osd->logger->tinc(l_osd_op_prepare_lat, prepare_latency);
-  if (op->may_read() && op->may_write()) {
+
+  if (op->may_read() && op->may_write()) 
+  {
     osd->logger->tinc(l_osd_op_rw_prepare_lat, prepare_latency);
-  } else if (op->may_read()) {
+  }
+  else if (op->may_read()) 
+  {
     osd->logger->tinc(l_osd_op_r_prepare_lat, prepare_latency);
-  } else if (op->may_write() || op->may_cache()) {
+  }
+  else if (op->may_write() || op->may_cache()) 
+  {
     osd->logger->tinc(l_osd_op_w_prepare_lat, prepare_latency);
   }
 }
@@ -2242,14 +2341,17 @@ ReplicatedPG::cache_result_t ReplicatedPG::maybe_handle_cache_detail(
   if (op &&
       op->get_req() &&
       op->get_req()->get_type() == CEPH_MSG_OSD_OP &&
-      (static_cast<MOSDOp *>(op->get_req())->get_flags() &
-       CEPH_OSD_FLAG_IGNORE_CACHE)) {
+      (static_cast<MOSDOp *>(op->get_req())->get_flags() & CEPH_OSD_FLAG_IGNORE_CACHE)) 
+  {
     dout(20) << __func__ << ": ignoring cache due to flag" << dendl;
     return cache_result_t::NOOP;
   }
   // return quickly if caching is not enabled
   if (pool.info.cache_mode == pg_pool_t::CACHEMODE_NONE)
+  {
+    dout(99) << "YuanguoDbg: ReplicatedPG::maybe_handle_cache_detail, caching is not enabled" << dendl;
     return cache_result_t::NOOP;
+  }
 
   must_promote = must_promote || op->need_promote();
 
@@ -9133,17 +9235,18 @@ int ReplicatedPG::find_object_context(const hobject_t& oid,
 {
   assert(oid.pool == static_cast<int64_t>(info.pgid.pool()));
   // want the head?
-  if (oid.snap == CEPH_NOSNAP) {
+  if (oid.snap == CEPH_NOSNAP) 
+  {
     ObjectContextRef obc = get_object_context(oid, can_create);
-    if (!obc) {
+
+    if (!obc) 
+    {
       if (pmissing)
         *pmissing = oid;
       return -ENOENT;
     }
-    dout(10) << "find_object_context " << oid
-       << " @" << oid.snap
-       << " oi=" << obc->obs.oi
-       << dendl;
+
+    dout(10) << "find_object_context " << oid << " @" << oid.snap << " oi=" << obc->obs.oi << dendl;
     *pobc = obc;
 
     return 0;
@@ -11563,12 +11666,16 @@ void ReplicatedPG::hit_set_clear()
 
 void ReplicatedPG::hit_set_setup()
 {
+
+  dout(99) << "YuanguoDbg: ReplicatedPG::hit_set_setup is_active:" << is_active() << " is_primary:" << is_primary() << dendl;
+
   if (!is_active() || !is_primary()) 
   {
     hit_set_clear();
     return;
   }
 
+  dout(99) << "YuanguoDbg: ReplicatedPG::hit_set_setup, hit_set_count:" << pool.info.hit_set_count << " hit_set_period:" << pool.info.hit_set_period << " type:" << pool.info.hit_set_params.get_type() << dendl;
   if (is_active() && is_primary() &&  //Yuanguo: allowed to remove hit set objects
       (!pool.info.hit_set_count || !pool.info.hit_set_period || pool.info.hit_set_params.get_type() == HitSet::TYPE_NONE)) //Yuanguo: should remove hit set objects 
   {
