@@ -1711,6 +1711,7 @@ typedef void (*rados_callback_t)(rados_completion_t cb, void *arg);
  * @param pc where to store the completion
  * @returns 0
  */
+//Yuanguo:  for cb_complete and cb_safe, see my notes in librados::IoCtxImpl::aio_write()
 CEPH_RADOS_API int rados_aio_create_completion(void *cb_arg,
                                                rados_callback_t cb_complete,
                                                rados_callback_t cb_safe,

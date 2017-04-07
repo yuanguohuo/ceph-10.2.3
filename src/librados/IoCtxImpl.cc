@@ -866,6 +866,44 @@ int librados::IoCtxImpl::aio_write(const object_t &oid, AioCompletionImpl *c,
   if (snap_seq != CEPH_NOSNAP)
     return -EROFS;
 
+  //Yuanguo: 
+  //  When send,
+  //      1. onack will be passed to Op::onack; onsafe will be passed to Op::oncommit; 
+  //      2. the Op object (the o below) will be kept in OSDSession::ops, see call path
+  //             Objecter::op_submit -->
+  //             Objecter::_op_submit_with_budget -->
+  //             Objecter::_op_submit  -->
+  //             Objecter::_session_op_assign
+  //      3. the OSDSession object is kept in Objecter::osd_sessions, see call path
+  //             Objecter::op_submit -->
+  //             Objecter::_op_submit_with_budget -->
+  //             Objecter::_op_submit -->
+  //             Objecter::_get_session
+  //  When reply,
+  //      1. find out the OSDSession from Objecter::osd_sessions;
+  //      2. find out the op from the OSDSession;
+  //      3. call op->onack and op->oncommit;
+  //  for details, see Objecter::handle_osd_op_reply; 
+  //  objecter is a Dispatcher (Objecter inherits from Dispatcher), and it was added 
+  //  to RadosClient::messenger (see RadosClient::connect), so RadosClient::messenger 
+  //  will call Objecter::ms_dispatch. The full call path is:
+  //             Pipe::reader calls msgr (RadosClient::messenger) to dispatch,
+  //             RadosClient::messenger call each of its dispatchers,
+  //             Objecter::ms_dispatch -->             
+  //             Objecter::handle_osd_op_reply;
+  //
+  //  Since Op::onack is set, message flag CEPH_OSD_FLAG_ACK will be set, and since
+  //  Op::oncommit is set, message flag CEPH_OSD_FLAG_ONDISK will be set, see 
+  //             Objecter::op_submit -->
+  //             Objecter::_op_submit_with_budget -->
+  //             Objecter::_op_submit -->
+  //             Objecter::_prepare_osd_op
+  //  As a result, OSD will know it should send "ack" and "oncommit" to the client. See:
+  //             ReplicatedPG::execute_ctx()
+  //
+  //  From ReplicatedPG::execute_ctx() and include/rados/librados.h:rados_aio_create_completion, we know:
+  //     complete = on ack  = on applied    has been written to the object in the filesystem (page cache), but not synced to disk;
+  //     on safe  = on commit               has been written into journal;
   Context *onack = new C_aio_Ack(c);
   Context *onsafe = new C_aio_Safe(c);
 

@@ -45,6 +45,13 @@ struct librados::AioCompletionImpl {
 
   IoCtxImpl *io;
   ceph_tid_t aio_write_seq;
+
+  //Yuanguo: an instance of xlist<T>::item that contains 'this'. It makes it 
+  //  easier to push 'this' into an xlist, because xlist::push_back/push_front
+  //  needs xlist<T>::item as argument).
+  //  That is to say, you can think of 'aio_write_list_item' as 'this'. For example,
+  //            aio_write_list.push_back(&c->aio_write_list_item);
+  //  is actually to push c->this into the aio_write_list;
   xlist<AioCompletionImpl*>::item aio_write_list_item;
 
   AioCompletionImpl() : lock("AioCompletionImpl lock", false, false),
@@ -98,6 +105,10 @@ struct librados::AioCompletionImpl {
     lock.Unlock();
     return r;
   }
+
+  //Yuanguo: callback_complete function will be called and then deleted when the AIO is complete, see 
+  //    struct C_AioComplete
+  // And see my notes in librados::IoCtxImpl::aio_write()
   int wait_for_complete_and_cb() {
     lock.Lock();
     while (!ack || callback_complete)
@@ -105,6 +116,10 @@ struct librados::AioCompletionImpl {
     lock.Unlock();
     return 0;
   }
+
+  //Yuanguo: callback_safe function will be called and then deleted when the AIO is safe, see 
+  //    struct C_AioSafe
+  // And see my notes in librados::IoCtxImpl::aio_write()
   int wait_for_safe_and_cb() {
     lock.Lock();
     while (!safe || callback_safe)
