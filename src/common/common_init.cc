@@ -129,7 +129,8 @@ void common_init_finish(CephContext *cct)
     cct->start_service_thread();
 
   if ((flags & CINIT_FLAG_DEFER_DROP_PRIVILEGES) &&
-      (cct->get_set_uid() || cct->get_set_gid())) {
+      (cct->get_set_uid() || cct->get_set_gid())) 
+  {
     cct->get_admin_socket()->chown(cct->get_set_uid(), cct->get_set_gid());
   }
 }

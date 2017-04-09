@@ -253,7 +253,7 @@ int librados::RadosClient::connect()
 
   ldout(cct, 1) << "starting objecter" << dendl;
 
-  objecter = new (std::nothrow) Objecter(cct, messenger, &monclient,
+  objecter = new (std::nothrow) Objecter(cct, messenger, &monclient, //Yuanguo: objecter and monclient use the same messenger;
 			  &finisher,
 			  cct->_conf->rados_mon_op_timeout,
 			  cct->_conf->rados_osd_op_timeout);
@@ -261,7 +261,7 @@ int librados::RadosClient::connect()
     goto out;
   objecter->set_balanced_budget();
 
-  monclient.set_messenger(messenger);
+  monclient.set_messenger(messenger); //Yuanguo: objecter and monclient use the same messenger;
 
   objecter->init();
   messenger->add_dispatcher_tail(objecter);
@@ -301,6 +301,11 @@ int librados::RadosClient::connect()
   instance_id = monclient.get_global_id();
 
   lock.Unlock();
+
+  //Yuanguo:  monclient.get_global_id() will return the same value;
+  //    messenger->set_myname(entity_name_t::CLIENT(monclient.get_global_id()));
+  //    instance_id = monclient.get_global_id();
+  ldout(cct, 99) << "YuanguoDbg: messenger name:" << messenger->get_myname() << " instance_id:" << instance_id << dendl;
 
   ldout(cct, 1) << "init done" << dendl;
   err = 0;
@@ -455,11 +460,14 @@ bool librados::RadosClient::ms_dispatch(Message *m)
   bool ret;
 
   Mutex::Locker l(lock);
-  if (state == DISCONNECTED) {
+  if (state == DISCONNECTED)
+  {
     ldout(cct, 10) << "disconnected, discarding " << *m << dendl;
     m->put();
     ret = true;
-  } else {
+  }
+  else 
+  {
     ret = _dispatch(m);
   }
   return ret;
@@ -482,7 +490,8 @@ void librados::RadosClient::ms_handle_remote_reset(Connection *con)
 bool librados::RadosClient::_dispatch(Message *m)
 {
   assert(lock.is_locked());
-  switch (m->get_type()) {
+  switch (m->get_type()) 
+  {
   // OSD
   case CEPH_MSG_OSD_MAP:
     cond.Signal();

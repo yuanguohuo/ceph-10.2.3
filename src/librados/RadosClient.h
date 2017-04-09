@@ -34,6 +34,25 @@ class MLog;
 class Messenger;
 class AioCompletionImpl;
 
+
+
+//Yuanguo: !!! librados::RadosClient is the actual "cluster handle", the real client 
+// of the ceph cluster;  it has some important members, such as:
+//       a. Messenger :  messenger used to communicate with OSDs and monitors;
+//       b. MonClient :  communicate with monitors; it uses messenger described in a; See
+//                            librados::RadosClient::connect  -->
+//                            monclient.set_messenger(messenger);
+//       c. Objecter  :  used to communicate with OSDs; it keeps a map of OSDSession instances (see 
+//                       Objecter::osd_sessions), operations pending on each OSDSession (see OSDSession::ops), 
+//                       and etc. It also uses messenger described in a; See
+//                            librados::RadosClient::connect -->
+//                            objecter = new (std::nothrow) Objecter(..., messenger, ...);
+// So, the messenger has 2 dispatchers, See 
+//                            librados::RadosClient::connect  -->
+//                               i.  messenger->add_dispatcher_tail(objecter);  dispatcher Objecter;
+//                               ii. messenger->add_dispatcher_tail(this);      dispatcher RadosClient;
+// dispatcher Objecter: used to process (reply) messages from OSDs; see Objecter::ms_dispatch;
+// dispatcher RadosClient: used to process (reply) messages from monitors; see librados::RadosClient::ms_dispatch;
 class librados::RadosClient : public Dispatcher
 {
 public:

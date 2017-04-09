@@ -91,26 +91,48 @@ public:
 
   void *entry()
   {
-    while (1) {
+    while (1) 
+    {
       Mutex::Locker l(_lock);
 
-      if (_cct->_conf->heartbeat_interval) {
+      //Yuanguo: 1. wait for a time of interval;
+      if (_cct->_conf->heartbeat_interval)   //Yuanguo: 5, by default
+      {
         utime_t interval(_cct->_conf->heartbeat_interval, 0);
         _cond.WaitInterval(_cct, _lock, interval);
-      } else
+      }
+      else
+      {
         _cond.Wait(_lock);
+      }
 
+      //Yuanguo: 2. check exit; 
       if (_exit_thread) {
         break;
       }
 
-      if (_reopen_logs) {
+      //Yuanguo: 3. reopen logs if needed;
+      // When the admin or some log splitting tool wants to split the log, he/it may
+      // backup current log and then send a signal (SIGHUP) to reopen a new log; See
+      //      sighup_handler  -->
+      //      g_ceph_context->reopen_logs()
+      if (_reopen_logs) 
+      {
         _cct->_log->reopen_log_file();
         _reopen_logs = false;
       }
+
+      //Yuanguo: 4. check if every thread is healthy; See
+      //    HeartbeatMap::check_touch_file -->
+      //    HeartbeatMap::is_healthy
       _cct->_heartbeat_map->check_touch_file();
 
+
       // refresh the perf coutners
+      //Yuanguo: 5. in step 4, we calculated 
+      //       A. total number of threads;
+      //       B. the number of unhealthy threads;
+      // now, set these 2 values to perf counter;
       _cct->refresh_perf_values();
     }
     return NULL;

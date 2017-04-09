@@ -2545,6 +2545,9 @@ extern "C" int rados_create(rados_t *pcluster, const char * const id)
   CephContext *cct = rados_create_cct("", &iparams);
 
   tracepoint(librados, rados_create_enter, id);
+  //Yuanguo: !!! librados::RadosClient is the actual "cluster handle", the real client 
+  // of the ceph cluster; 
+  // See my comments of class librados::RadosClient at librados/RadosClient.h;  
   *pcluster = reinterpret_cast<rados_t>(new librados::RadosClient(cct));
   tracepoint(librados, rados_create_exit, 0, *pcluster);
 
@@ -2570,7 +2573,11 @@ extern "C" int rados_create2(rados_t *pcluster, const char *const clustername,
 
   CephContext *cct = rados_create_cct(clustername, &iparams);
   tracepoint(librados, rados_create2_enter, clustername, name, flags);
-  if (retval == 0) {
+  if (retval == 0) 
+  {
+    //Yuanguo: !!! librados::RadosClient is the actual "cluster handle", the real client 
+    // of the ceph cluster; 
+    // See my comments of class librados::RadosClient at librados/RadosClient.h;  
     *pcluster = reinterpret_cast<rados_t>(new librados::RadosClient(cct));
   }
   tracepoint(librados, rados_create2_exit, retval, *pcluster);

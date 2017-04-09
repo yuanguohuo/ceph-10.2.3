@@ -44,7 +44,7 @@ struct heartbeat_handle_d {
   const std::string name;
   atomic_t timeout, suicide_timeout;
   time_t grace, suicide_grace;
-  std::list<heartbeat_handle_d*>::iterator list_item;
+  std::list<heartbeat_handle_d*>::iterator list_item;  //Yuanguo: point to 'this', see HeartbeatMap::add_worker
 
   explicit heartbeat_handle_d(const std::string& n)
     : name(n), grace(0), suicide_grace(0)

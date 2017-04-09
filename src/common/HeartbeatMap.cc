@@ -120,23 +120,25 @@ bool HeartbeatMap::is_healthy()
   int total = 0;
   m_rwlock.get_read();
   time_t now = time(NULL);
-  if (m_cct->_conf->heartbeat_inject_failure) {
+  if (m_cct->_conf->heartbeat_inject_failure) 
+  {
     ldout(m_cct, 0) << "is_healthy injecting failure for next " << m_cct->_conf->heartbeat_inject_failure << " seconds" << dendl;
     m_inject_unhealthy_until = now + m_cct->_conf->heartbeat_inject_failure;
     m_cct->_conf->set_val("heartbeat_inject_failure", "0");
   }
 
   bool healthy = true;
-  if (now < m_inject_unhealthy_until) {
+  if (now < m_inject_unhealthy_until) 
+  {
     ldout(m_cct, 0) << "is_healthy = false, injected failure for next " << (m_inject_unhealthy_until - now) << " seconds" << dendl;
     healthy = false;
   }
 
-  for (list<heartbeat_handle_d*>::iterator p = m_workers.begin();
-       p != m_workers.end();
-       ++p) {
+  for (list<heartbeat_handle_d*>::iterator p = m_workers.begin(); p != m_workers.end(); ++p) 
+  {
     heartbeat_handle_d *h = *p;
-    if (!_check(h, "is_healthy", now)) {
+    if (!_check(h, "is_healthy", now)) 
+    {
       healthy = false;
       unhealthy++;
     }
@@ -148,7 +150,7 @@ bool HeartbeatMap::is_healthy()
   m_total_workers.set(total);
 
   ldout(m_cct, 20) << "is_healthy = " << (healthy ? "healthy" : "NOT HEALTHY")
-    << ", total workers: " << total << ", number of unhealthy: " << unhealthy << dendl;
+                   << ", total workers: " << total << ", number of unhealthy: " << unhealthy << dendl;
   return healthy;
 }
 
@@ -164,16 +166,20 @@ int HeartbeatMap::get_total_workers() const
 
 void HeartbeatMap::check_touch_file()
 {
-  if (is_healthy()) {
-    string path = m_cct->_conf->heartbeat_file;
-    if (path.length()) {
+  if (is_healthy())
+  {
+    string path = m_cct->_conf->heartbeat_file;  //Yuanguo: by default, it is empty;
+    if (path.length()) 
+    {
       int fd = ::open(path.c_str(), O_WRONLY|O_CREAT, 0644);
-      if (fd >= 0) {
-	::utimes(path.c_str(), NULL);
-	::close(fd);
-      } else {
-	ldout(m_cct, 0) << "unable to touch " << path << ": "
-			<< cpp_strerror(errno) << dendl;
+      if (fd >= 0) 
+      {
+        ::utimes(path.c_str(), NULL);
+        ::close(fd);
+      }
+      else
+      {
+        ldout(m_cct, 0) << "unable to touch " << path << ": "	<< cpp_strerror(errno) << dendl;
       }
     }
   }
