@@ -2419,6 +2419,7 @@ CEPH_RADOS_API void rados_write_op_set_flags(rados_write_op_t write_op,
  * Ensure that the object exists before writing
  * @param write_op operation to add this action to
  */
+//Yuanguo: a kind of CheckAndPut?
 CEPH_RADOS_API void rados_write_op_assert_exists(rados_write_op_t write_op);
 
 /**
@@ -2434,6 +2435,7 @@ CEPH_RADOS_API void rados_write_op_assert_exists(rados_write_op_t write_op);
  * @param write_op operation to add this action to
  * @param ver object version number
  */
+//Yuanguo: a kind of CheckAndPut?
 CEPH_RADOS_API void rados_write_op_assert_version(rados_write_op_t write_op, uint64_t ver);
 
 /**
@@ -2447,6 +2449,7 @@ CEPH_RADOS_API void rados_write_op_assert_version(rados_write_op_t write_op, uin
  * @param value buffer to compare actual xattr value to
  * @param value_len length of buffer to compare actual xattr value to
  */
+//Yuanguo: a kind of CheckAndPut?
 CEPH_RADOS_API void rados_write_op_cmpxattr(rados_write_op_t write_op,
                                             const char *name,
                                             uint8_t comparison_operator,
@@ -2466,6 +2469,7 @@ CEPH_RADOS_API void rados_write_op_cmpxattr(rados_write_op_t write_op,
  * @param val_len length of value in bytes
  * @param prval where to store the return value from this action
  */
+//Yuanguo: a kind of CheckAndPut?
 CEPH_RADOS_API void rados_write_op_omap_cmp(rados_write_op_t write_op,
 			                    const char *key,
 			                    uint8_t comparison_operator,

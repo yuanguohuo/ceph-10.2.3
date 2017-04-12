@@ -4782,6 +4782,8 @@ extern "C" void rados_write_op_assert_version(rados_write_op_t write_op, uint64_
 extern "C" void rados_write_op_assert_exists(rados_write_op_t write_op)
 {
   tracepoint(librados, rados_write_op_assert_exists_enter, write_op);
+  //Yuanguo: If not exists, stat will fail, as a result, the write op cannot be done.
+  //    That is the way assert_exists is achieved.
   ((::ObjectOperation *)write_op)->stat(NULL, (ceph::real_time *)NULL, NULL);
   tracepoint(librados, rados_write_op_assert_exists_exit);
 }

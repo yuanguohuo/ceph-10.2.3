@@ -179,6 +179,30 @@ extern const char *ceph_osd_state_name(int s);
 #define __CEPH_OSD_OP(mode, type, nr) \
 	(CEPH_OSD_OP_MODE_##mode | CEPH_OSD_OP_TYPE_##type | (nr))
 
+//Yuanguo: there are 7 PGOPs defined below
+//  CEPH_OSD_OP_PGLS           =   CEPH_OSD_OP_MODE_RD | CEPH_OSD_OP_TYPE_PG | 1
+//  CEPH_OSD_OP_PGLS_FILTER    =   CEPH_OSD_OP_MODE_RD | CEPH_OSD_OP_TYPE_PG | 2
+//  CEPH_OSD_OP_PG_HITSET_LS   =   CEPH_OSD_OP_MODE_RD | CEPH_OSD_OP_TYPE_PG | 3
+//  CEPH_OSD_OP_PG_HITSET_GET  =   CEPH_OSD_OP_MODE_RD | CEPH_OSD_OP_TYPE_PG | 4
+//  CEPH_OSD_OP_PGNLS          =   CEPH_OSD_OP_MODE_RD | CEPH_OSD_OP_TYPE_PG | 5
+//  CEPH_OSD_OP_PGNLS_FILTER   =   CEPH_OSD_OP_MODE_RD | CEPH_OSD_OP_TYPE_PG | 6
+//  CEPH_OSD_OP_SCRUBLS        =   CEPH_OSD_OP_MODE_RD | CEPH_OSD_OP_TYPE_PG | 7
+//
+//  that's to say, the op-type is CEPH_OSD_OP_TYPE_PG and it's encoded into the opcode. In OSD, this 
+//  is used to test if the op is PGOP, see 
+//           ReplicatedPG::do_op  -->
+//           OSD::init_op_flags   -->
+//           ceph_osd_op_type_pg
+// 
+// Although op-type is encoded into the opcode, there is a flag CEPH_OSD_FLAG_PGOP indicating the op
+// is a PGOP, and it seems that this flag often accompanies the opcodes above. e.g.
+//       librados::IoCtxImpl::get_inconsistent_objects
+//       librados::IoCtxImpl::get_inconsistent_snapsets
+//       Objecter::do_scrub_ls
+//       Objecter::pg_ls
+//       Objecter::pg_nls
+// Then, why the flag CEPH_OSD_FLAG_PGOP is needed ???
+
 #define __CEPH_FORALL_OSD_OPS(f)					    \
 	/** data **/							    \
 	/* read */							    \
