@@ -3054,7 +3054,9 @@ void ReplicatedPG::promote_object(ObjectContextRef obc,
 void ReplicatedPG::execute_ctx(OpContext *ctx)
 {
   dout(10) << __func__ << " " << ctx << dendl;
+
   ctx->reset_obs(ctx->obc);
+
   OpRequestRef op = ctx->op;
   MOSDOp *m = static_cast<MOSDOp*>(op->get_req());
   ObjectContextRef obc = ctx->obc;
@@ -3065,22 +3067,24 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
   // before we finally apply the resulting transaction.
   ctx->op_t.reset(pgbackend->get_transaction());
 
-  if (op->may_write() || op->may_cache()) {
+  if (op->may_write() || op->may_cache()) 
+  {
     // snap
-    if (!(m->has_flag(CEPH_OSD_FLAG_ENFORCE_SNAPC)) &&
-	pool.info.is_pool_snaps_mode()) {
+    if (!(m->has_flag(CEPH_OSD_FLAG_ENFORCE_SNAPC)) && pool.info.is_pool_snaps_mode())
+    {
       // use pool's snapc
       ctx->snapc = pool.snapc;
-    } else {
+    }
+    else
+    {
       // client specified snapc
       ctx->snapc.seq = m->get_snap_seq();
       ctx->snapc.snaps = m->get_snaps();
     }
-    if ((m->has_flag(CEPH_OSD_FLAG_ORDERSNAP)) &&
-	ctx->snapc.seq < obc->ssc->snapset.seq) {
-      dout(10) << " ORDERSNAP flag set and snapc seq " << ctx->snapc.seq
-	       << " < snapset seq " << obc->ssc->snapset.seq
-	       << " on " << obc->obs.oi.soid << dendl;
+
+    if ((m->has_flag(CEPH_OSD_FLAG_ORDERSNAP)) && ctx->snapc.seq < obc->ssc->snapset.seq)
+    {
+      dout(10) << " ORDERSNAP flag set and snapc seq " << ctx->snapc.seq << " < snapset seq " << obc->ssc->snapset.seq << " on " << obc->obs.oi.soid << dendl;
       dout(99) << "YuanguoDbg: ReplicatedPG::execute_ctx, call reply_ctx with -EOLDSNAPC" << dendl;
       reply_ctx(ctx, -EOLDSNAPC);
       return;
@@ -3090,26 +3094,27 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
     ctx->at_version = get_next_version();
     ctx->mtime = m->get_mtime();
 
-    dout(10) << "do_op " << soid << " " << ctx->ops
-	     << " ov " << obc->obs.oi.version << " av " << ctx->at_version 
-	     << " snapc " << ctx->snapc
-	     << " snapset " << obc->ssc->snapset
-	     << dendl;  
-  } else {
-    dout(10) << "do_op " << soid << " " << ctx->ops
-	     << " ov " << obc->obs.oi.version
-	     << dendl;  
+    dout(10) << "do_op " << soid << " " << ctx->ops << " ov " << obc->obs.oi.version << " av " << ctx->at_version 
+                                 << " snapc " << ctx->snapc << " snapset " << obc->ssc->snapset << dendl;  
+  }
+  else
+  {
+    dout(10) << "do_op " << soid << " " << ctx->ops << " ov " << obc->obs.oi.version << dendl;  
   }
 
   if (!ctx->user_at_version)
     ctx->user_at_version = obc->obs.oi.user_version;
+
   dout(30) << __func__ << " user_at_version " << ctx->user_at_version << dendl;
 
-  if (op->may_read()) {
+  if (op->may_read())
+  {
     dout(10) << " taking ondisk_read_lock" << dendl;
     obc->ondisk_read_lock();
   }
-  for (map<hobject_t,ObjectContextRef, hobject_t::BitwiseComparator>::iterator p = src_obc.begin(); p != src_obc.end(); ++p) {
+
+  for (map<hobject_t,ObjectContextRef, hobject_t::BitwiseComparator>::iterator p = src_obc.begin(); p != src_obc.end(); ++p)
+  {
     dout(10) << " taking ondisk_read_lock for src " << p->first << dendl;
     p->second->ondisk_read_lock();
   }
@@ -3136,21 +3141,26 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
         reqid.name._num, reqid.tid, reqid.inc);
   }
 
-  if (op->may_read()) {
+  if (op->may_read())
+  {
     dout(10) << " dropping ondisk_read_lock" << dendl;
     obc->ondisk_read_unlock();
   }
-  for (map<hobject_t,ObjectContextRef, hobject_t::BitwiseComparator>::iterator p = src_obc.begin(); p != src_obc.end(); ++p) {
+
+  for (map<hobject_t,ObjectContextRef, hobject_t::BitwiseComparator>::iterator p = src_obc.begin(); p != src_obc.end(); ++p)
+  {
     dout(10) << " dropping ondisk_read_lock for src " << p->first << dendl;
     p->second->ondisk_read_unlock();
   }
 
-  if (result == -EINPROGRESS) {
+  if (result == -EINPROGRESS)
+  {
     // come back later.
     return;
   }
 
-  if (result == -EAGAIN) {
+  if (result == -EAGAIN)
+  {
     // clean up after the ctx
     close_op_ctx(ctx);
     dout(99) << "YuanguoDbg: ReplicatedPG::execute_ctx, released rw locks of object: " << m->get_oid() << " because result==-EAGAIN" << dendl;
@@ -3158,9 +3168,9 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
   }
 
   bool successful_write = !ctx->op_t->empty() && op->may_write() && result >= 0;
+
   // prepare the reply
-  ctx->reply = new MOSDOpReply(m, 0, get_osdmap()->get_epoch(), 0,
-			       successful_write);
+  ctx->reply = new MOSDOpReply(m, 0, get_osdmap()->get_epoch(), 0, successful_write);
 
   // Write operations aren't allowed to return a data payload because
   // we can't do so reliably. If the client has to resend the request
@@ -3169,28 +3179,39 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
   // possible to construct an operation that does a read, does a guard
   // check (e.g., CMPXATTR), and then a write.  Then we either succeed
   // with the write, or return a CMPXATTR and the read value.
-  if (successful_write) {
+  if (successful_write)
+  {
     // write.  normalize the result code.
     dout(20) << " zeroing write result code " << result << dendl;
     result = 0;
   }
+
   ctx->reply->set_result(result);
 
+  // Yuanguo: only write and cache ops are put in the transaction (ctx->op_t), so if
+  // ctx->op_t is empty, there are no write or cache ops, only read ops;
   // read or error?
-  if (ctx->op_t->empty() || result < 0) {
+  if (ctx->op_t->empty() || result < 0)
+  {
     // finish side-effects
     if (result == 0)
       do_osd_op_effects(ctx, m->get_connection());
 
-    if (ctx->pending_async_reads.empty()) {
+    if (ctx->pending_async_reads.empty())
+    {
       complete_read_ctx(result, ctx);
-    } else {
+    }
+    else
+    {
       in_progress_async_reads.push_back(make_pair(op, ctx));
       ctx->start_async_reads(this);
     }
 
+    //Yuanguo: if there are only read ops, finished.
     return;
   }
+
+  //Yuanguo: there are write and/or cache ops ...
 
   ctx->reply->set_reply_versions(ctx->at_version, ctx->user_at_version);
 
@@ -3200,20 +3221,24 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
   calc_trim_to();
 
   // verify that we are doing this in order?
-  if (cct->_conf->osd_debug_op_order && m->get_source().is_client() &&
-      !pool.info.is_tier() && !pool.info.has_tiers()) {
+  if (cct->_conf->osd_debug_op_order && m->get_source().is_client() && !pool.info.is_tier() && !pool.info.has_tiers())
+  {
     map<client_t,ceph_tid_t>& cm = debug_op_order[obc->obs.oi.soid];
     ceph_tid_t t = m->get_tid();
     client_t n = m->get_source().num();
     map<client_t,ceph_tid_t>::iterator p = cm.find(n);
-    if (p == cm.end()) {
+    if (p == cm.end())
+    {
       dout(20) << " op order client." << n << " tid " << t << " (first)" << dendl;
       cm[n] = t;
-    } else {
+    }
+    else
+    {
       dout(20) << " op order client." << n << " tid " << t << " last was " << p->second << dendl;
-      if (p->second > t) {
-	derr << "bad op order, already applied " << p->second << " > this " << t << dendl;
-	assert(0 == "out of order op");
+      if (p->second > t)
+      {
+        derr << "bad op order, already applied " << p->second << " > this " << t << dendl;
+        assert(0 == "out of order op");
       }
       p->second = t;
     }
@@ -3221,65 +3246,75 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
 
   // no need to capture PG ref, repop cancel will handle that
   // Can capture the ctx by pointer, it's owned by the repop
-  ctx->register_on_applied(
-    [m, ctx, this](){
-      if (m && m->wants_ack() && !ctx->sent_ack && !ctx->sent_disk) {
-	// send ack
-	MOSDOpReply *reply = ctx->reply;
-	if (reply)
-	  ctx->reply = NULL;
-	else {
-	  reply = new MOSDOpReply(m, 0, get_osdmap()->get_epoch(), 0, true);
-	  reply->set_reply_versions(ctx->at_version,
-				    ctx->user_at_version);
-	}
-	reply->add_flags(CEPH_OSD_FLAG_ACK);
-	dout(10) << " sending ack: " << *m << " " << reply << dendl;
-	osd->send_message_osd_client(reply, m->get_connection());
-	ctx->sent_ack = true;
-      }
+  ctx->register_on_applied( [m, ctx, this]()
+      {
+        if (m && m->wants_ack() && !ctx->sent_ack && !ctx->sent_disk)
+        {
+          // send ack
+          MOSDOpReply *reply = ctx->reply;
+          if (reply)
+          {
+            ctx->reply = NULL;
+          }
+          else
+          {
+            reply = new MOSDOpReply(m, 0, get_osdmap()->get_epoch(), 0, true);
+            reply->set_reply_versions(ctx->at_version, ctx->user_at_version);
+          }
+          reply->add_flags(CEPH_OSD_FLAG_ACK);
+          dout(10) << " sending ack: " << *m << " " << reply << dendl;
+          osd->send_message_osd_client(reply, m->get_connection());
+          ctx->sent_ack = true;
+        }
 
-      // note the write is now readable (for rlatency calc).  note
-      // that this will only be defined if the write is readable
-      // _prior_ to being committed; it will not get set with
-      // writeahead journaling, for instance.
-      if (ctx->readable_stamp == utime_t())
-	ctx->readable_stamp = ceph_clock_now(cct);
-    });
-  ctx->register_on_commit(
-    [m, ctx, this](){
-      if (ctx->op)
-	log_op_stats(
-	  ctx);
+        // note the write is now readable (for rlatency calc).  note
+        // that this will only be defined if the write is readable
+        // _prior_ to being committed; it will not get set with
+        // writeahead journaling, for instance.
+        if (ctx->readable_stamp == utime_t())
+        {
+          ctx->readable_stamp = ceph_clock_now(cct);
+        }
+      });
 
-      if (m && m->wants_ondisk() && !ctx->sent_disk) {
-	// send commit.
-	MOSDOpReply *reply = ctx->reply;
-	if (reply)
-	  ctx->reply = NULL;
-	else {
-	  reply = new MOSDOpReply(m, 0, get_osdmap()->get_epoch(), 0, true);
-	  reply->set_reply_versions(ctx->at_version,
-				    ctx->user_at_version);
-	}
-	reply->add_flags(CEPH_OSD_FLAG_ACK | CEPH_OSD_FLAG_ONDISK);
-	dout(10) << " sending commit on " << *m << " " << reply << dendl;
-	osd->send_message_osd_client(reply, m->get_connection());
-	ctx->sent_disk = true;
-	ctx->op->mark_commit_sent();
-      }
-    });
-  ctx->register_on_success(
-    [ctx, this]() {
-      do_osd_op_effects(
-	ctx,
-	ctx->op ? ctx->op->get_req()->get_connection() :
-	ConnectionRef());
-    });
-  ctx->register_on_finish(
-    [ctx, this]() {
-      delete ctx;
-    });
+  ctx->register_on_commit( [m, ctx, this]()
+      {
+        if (ctx->op)
+        {
+          log_op_stats(ctx);
+        }
+
+        if (m && m->wants_ondisk() && !ctx->sent_disk)
+        {
+          // send commit.
+          MOSDOpReply *reply = ctx->reply;
+          if (reply)
+          {
+            ctx->reply = NULL;
+          }
+          else
+          {
+            reply = new MOSDOpReply(m, 0, get_osdmap()->get_epoch(), 0, true);
+            reply->set_reply_versions(ctx->at_version, ctx->user_at_version);
+          }
+
+          reply->add_flags(CEPH_OSD_FLAG_ACK | CEPH_OSD_FLAG_ONDISK);
+          dout(10) << " sending commit on " << *m << " " << reply << dendl;
+          osd->send_message_osd_client(reply, m->get_connection());
+          ctx->sent_disk = true;
+          ctx->op->mark_commit_sent();
+        }
+      });
+
+  ctx->register_on_success( [ctx, this]()
+      {
+        do_osd_op_effects(ctx, ctx->op ? ctx->op->get_req()->get_connection() : ConnectionRef());
+      });
+
+  ctx->register_on_finish( [ctx, this]()
+      {
+        delete ctx;
+      });
 
   // issue replica writes
   ceph_tid_t rep_tid = osd->get_tid();
