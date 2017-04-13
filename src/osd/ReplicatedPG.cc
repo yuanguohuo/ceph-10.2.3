@@ -2040,6 +2040,8 @@ void ReplicatedPG::do_op(OpRequestRef& op)
       return;
     }
 
+    //Yuanguo: there are 3 multi operations: clonerange, assert-src-version, src-cmpxattr. Search "MULTI" in include/rados.h
+    //     !!!! Note: this is different from "do multiple operations on one object atomicly", Search "Object Operations" in include/rados/librados.h
     if (!ceph_osd_op_type_multi(osd_op.op.op))
     {
       dout(99) << "YuanguoDbg: ReplicatedPG::do_op, non multi op: " << osd_op.op.op << dendl; 
