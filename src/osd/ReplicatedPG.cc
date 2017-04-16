@@ -1614,9 +1614,9 @@ void ReplicatedPG::do_op(OpRequestRef& op)
 	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, rmw_flags=" << op->rmw_flags << " flags=" << m->get_flags() << dendl;
 
   if ((m->get_flags() & (CEPH_OSD_FLAG_BALANCE_READS |
-			 CEPH_OSD_FLAG_LOCALIZE_READS)) &&       //Yuanguo: balance or localize
-      op->may_read() &&                        //Yuanguo: AND is read op
-      !(op->may_write() || op->may_cache())) { //Yuanguo: AND is not write or cache op
+			 CEPH_OSD_FLAG_LOCALIZE_READS)) &&       //Yuanguo: balance or localize flag is set
+      op->may_read() &&                        //Yuanguo: AND has read op
+      !(op->may_write() || op->may_cache())) { //Yuanguo: AND has no write or cache op
     // balanced reads; any replica will do
     if (!(is_primary() || is_replica())) {     //Yuanguo: I am not primary or replica osd, must be misdirected to me!
       osd->handle_misdirected_op(this, op);
@@ -3069,17 +3069,20 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
 
   if (op->may_write() || op->may_cache()) 
   {
+    dout(99) << "YuanguoDbg: ReplicatedPG::execute_ctx, may_write or may_cache" << dendl;
     // snap
     if (!(m->has_flag(CEPH_OSD_FLAG_ENFORCE_SNAPC)) && pool.info.is_pool_snaps_mode())
     {
       // use pool's snapc
       ctx->snapc = pool.snapc;
+      dout(99) << "YuanguoDbg: ReplicatedPG::execute_ctx, use pool's snapc, snapc.seq=" << ctx->snapc.seq << dendl;
     }
     else
     {
       // client specified snapc
       ctx->snapc.seq = m->get_snap_seq();
       ctx->snapc.snaps = m->get_snaps();
+      dout(99) << "YuanguoDbg: ReplicatedPG::execute_ctx, client specified snapc, snapc.seq=" << ctx->snapc.seq << dendl;
     }
 
     if ((m->has_flag(CEPH_OSD_FLAG_ORDERSNAP)) && ctx->snapc.seq < obc->ssc->snapset.seq)
@@ -6821,26 +6824,30 @@ int ReplicatedPG::prepare_transaction(OpContext *ctx)
     return result;
 
   // read-op?  done?
-  if (ctx->op_t->empty() && !ctx->modify) {
+  if (ctx->op_t->empty() && !ctx->modify)
+  {
     unstable_stats.add(ctx->delta_stats);
     return result;
   }
 
   // check for full
-  if ((ctx->delta_stats.num_bytes > 0 ||
-       ctx->delta_stats.num_objects > 0) &&  // FIXME: keys?
-      (pool.info.has_flag(pg_pool_t::FLAG_FULL) ||
-       get_osdmap()->test_flag(CEPH_OSDMAP_FULL))) {
+  if ((ctx->delta_stats.num_bytes > 0 || ctx->delta_stats.num_objects > 0) &&  // FIXME: keys?
+      (pool.info.has_flag(pg_pool_t::FLAG_FULL) || get_osdmap()->test_flag(CEPH_OSDMAP_FULL)))
+  {
     MOSDOp *m = static_cast<MOSDOp*>(ctx->op->get_req());
     if (ctx->reqid.name.is_mds() ||   // FIXME: ignore MDS for now
-	m->has_flag(CEPH_OSD_FLAG_FULL_FORCE)) {
-      dout(20) << __func__ << " full, but proceeding due to FULL_FORCE or MDS"
-	       << dendl;
-    } else if (m->has_flag(CEPH_OSD_FLAG_FULL_TRY)) {
+        m->has_flag(CEPH_OSD_FLAG_FULL_FORCE))
+    {
+      dout(20) << __func__ << " full, but proceeding due to FULL_FORCE or MDS" << dendl;
+    }
+    else if (m->has_flag(CEPH_OSD_FLAG_FULL_TRY))
+    {
       // they tried, they failed.
       dout(20) << __func__ << " full, replying to FULL_TRY op" << dendl;
       return pool.info.has_flag(pg_pool_t::FLAG_FULL) ? -EDQUOT : -ENOSPC;
-    } else {
+    }
+    else
+    {
       // drop request
       dout(20) << __func__ << " full, dropping request (bad client)" << dendl;
       return -EAGAIN;
@@ -6849,92 +6856,100 @@ int ReplicatedPG::prepare_transaction(OpContext *ctx)
 
   // clone, if necessary
   if (soid.snap == CEPH_NOSNAP)
+  {
     make_writeable(ctx);
+  }
 
-  finish_ctx(ctx,
-	     ctx->new_obs.exists ? pg_log_entry_t::MODIFY :
-	     pg_log_entry_t::DELETE);
+  finish_ctx(ctx, ctx->new_obs.exists ? pg_log_entry_t::MODIFY : pg_log_entry_t::DELETE);
 
   return result;
 }
 
-void ReplicatedPG::finish_ctx(OpContext *ctx, int log_op_type, bool maintain_ssc,
-			      bool scrub_ok)
+void ReplicatedPG::finish_ctx(OpContext *ctx, int log_op_type, bool maintain_ssc, bool scrub_ok)
 {
   const hobject_t& soid = ctx->obs->oi.soid;
-  dout(20) << __func__ << " " << soid << " " << ctx
-	   << " op " << pg_log_entry_t::get_op_name(log_op_type)
-	   << dendl;
+
+  dout(20) << __func__ << " " << soid << " " << ctx << " op " << pg_log_entry_t::get_op_name(log_op_type) << dendl;
+
   utime_t now = ceph_clock_now(cct);
 
   // snapset
   bufferlist bss;
 
-  if (soid.snap == CEPH_NOSNAP && maintain_ssc) {
+  if (soid.snap == CEPH_NOSNAP && maintain_ssc) 
+  {
     ::encode(ctx->new_snapset, bss);
     assert(ctx->new_obs.exists == ctx->new_snapset.head_exists);
 
-    if (ctx->new_obs.exists) {
-      if (!ctx->obs->exists) {
-	if (ctx->snapset_obc && ctx->snapset_obc->obs.exists) {
-	  hobject_t snapoid = soid.get_snapdir();
-	  ctx->log.push_back(pg_log_entry_t(pg_log_entry_t::DELETE, snapoid,
-	      ctx->at_version,
-	      ctx->snapset_obc->obs.oi.version,
-	      0, osd_reqid_t(), ctx->mtime));
-	  if (pool.info.require_rollback()) {
-	    if (ctx->log.back().mod_desc.rmobject(ctx->at_version.version)) {
-	      ctx->op_t->stash(snapoid, ctx->at_version.version);
-	    } else {
-	      ctx->op_t->remove(snapoid);
-	    }
-	  } else {
-	    ctx->op_t->remove(snapoid);
-	    ctx->log.back().mod_desc.mark_unrollbackable();
-	  }
-	  dout(10) << " removing old " << snapoid << dendl;
+    if (ctx->new_obs.exists)
+    {
+      if(!ctx->obs->exists)
+      {
+        if (ctx->snapset_obc && ctx->snapset_obc->obs.exists)
+        {
+          hobject_t snapoid = soid.get_snapdir();
+          ctx->log.push_back(pg_log_entry_t(pg_log_entry_t::DELETE, snapoid, ctx->at_version, ctx->snapset_obc->obs.oi.version, 0, osd_reqid_t(), ctx->mtime));
+          if (pool.info.require_rollback())
+          {
+            if (ctx->log.back().mod_desc.rmobject(ctx->at_version.version))
+            {
+              ctx->op_t->stash(snapoid, ctx->at_version.version);
+            }
+            else
+            {
+              ctx->op_t->remove(snapoid);
+            }
+          }
+          else
+          {
+            ctx->op_t->remove(snapoid);
+            ctx->log.back().mod_desc.mark_unrollbackable();
+          }
 
-	  ctx->at_version.version++;
+          dout(10) << " removing old " << snapoid << dendl;
 
-	  ctx->snapset_obc->obs.exists = false;
-	}
+          ctx->at_version.version++;
+
+          ctx->snapset_obc->obs.exists = false;
+        }
       }
-    } else if (ctx->new_snapset.clones.size() &&
-	       !ctx->cache_evict &&
-	       (!ctx->snapset_obc || !ctx->snapset_obc->obs.exists)) {
+    }
+    else if (ctx->new_snapset.clones.size() && !ctx->cache_evict && (!ctx->snapset_obc || !ctx->snapset_obc->obs.exists))
+    {
       // save snapset on _snap
-      hobject_t snapoid(soid.oid, soid.get_key(), CEPH_SNAPDIR, soid.get_hash(),
-			info.pgid.pool(), soid.get_namespace());
-      dout(10) << " final snapset " << ctx->new_snapset
-	       << " in " << snapoid << dendl;
-      ctx->log.push_back(pg_log_entry_t(pg_log_entry_t::MODIFY, snapoid,
-					ctx->at_version,
-	                                eversion_t(),
-					0, osd_reqid_t(), ctx->mtime));
+      hobject_t snapoid(soid.oid, soid.get_key(), CEPH_SNAPDIR, soid.get_hash(), info.pgid.pool(), soid.get_namespace());
+      dout(10) << " final snapset " << ctx->new_snapset << " in " << snapoid << dendl;
+      ctx->log.push_back(pg_log_entry_t(pg_log_entry_t::MODIFY, snapoid, ctx->at_version, eversion_t(), 0, osd_reqid_t(), ctx->mtime));
 
       if (!ctx->snapset_obc)
-	ctx->snapset_obc = get_object_context(snapoid, true);
+      {
+        ctx->snapset_obc = get_object_context(snapoid, true);
+      }
+
       bool got = false;
-      if (ctx->lock_type == ObjectContext::RWState::RWWRITE) {
-	got = ctx->lock_manager.get_write_greedy(
-	  snapoid,
-	  ctx->snapset_obc,
-	  ctx->op);
-      } else {
-	assert(ctx->lock_type == ObjectContext::RWState::RWEXCL);
-	got = ctx->lock_manager.get_lock_type(
-	  ObjectContext::RWState::RWEXCL,
-	  snapoid,
-	  ctx->snapset_obc,
-	  ctx->op);
+      if (ctx->lock_type == ObjectContext::RWState::RWWRITE)
+      {
+        got = ctx->lock_manager.get_write_greedy(snapoid, ctx->snapset_obc, ctx->op);
       }
+      else
+      {
+        assert(ctx->lock_type == ObjectContext::RWState::RWEXCL);
+        got = ctx->lock_manager.get_lock_type(ObjectContext::RWState::RWEXCL, snapoid, ctx->snapset_obc, ctx->op);
+      }
+
       assert(got);
+
       dout(20) << " got greedy write on snapset_obc " << *ctx->snapset_obc << dendl;
-      if (pool.info.require_rollback() && !ctx->snapset_obc->obs.exists) {
-	ctx->log.back().mod_desc.create();
-      } else if (!pool.info.require_rollback()) {
-	ctx->log.back().mod_desc.mark_unrollbackable();
+
+      if (pool.info.require_rollback() && !ctx->snapset_obc->obs.exists)
+      {
+        ctx->log.back().mod_desc.create();
       }
+      else if(!pool.info.require_rollback())
+      {
+        ctx->log.back().mod_desc.mark_unrollbackable();
+      }
+
       ctx->snapset_obc->obs.exists = true;
       ctx->snapset_obc->obs.oi.version = ctx->at_version;
       ctx->snapset_obc->obs.oi.last_reqid = ctx->reqid;
@@ -6942,48 +6957,67 @@ void ReplicatedPG::finish_ctx(OpContext *ctx, int log_op_type, bool maintain_ssc
       ctx->snapset_obc->obs.oi.local_mtime = now;
 
       map<string, bufferlist> attrs;
+
       bufferlist bv(sizeof(ctx->new_obs.oi));
       ::encode(ctx->snapset_obc->obs.oi, bv);
+
       ctx->op_t->touch(snapoid);
+
       attrs[OI_ATTR].claim(bv);
       attrs[SS_ATTR].claim(bss);
+
       setattrs_maybe_cache(ctx->snapset_obc, ctx, ctx->op_t.get(), attrs);
-      if (pool.info.require_rollback()) {
-	map<string, boost::optional<bufferlist> > to_set;
-	to_set[SS_ATTR];
-	to_set[OI_ATTR];
-	ctx->log.back().mod_desc.setattrs(to_set);
-      } else {
-	ctx->log.back().mod_desc.mark_unrollbackable();
+
+      if (pool.info.require_rollback())
+      {
+        map<string, boost::optional<bufferlist> > to_set;
+        to_set[SS_ATTR];
+        to_set[OI_ATTR];
+        ctx->log.back().mod_desc.setattrs(to_set);
       }
+      else
+      {
+        ctx->log.back().mod_desc.mark_unrollbackable();
+      }
+
       ctx->at_version.version++;
     }
   }
 
   // finish and log the op.
-  if (ctx->user_modify) {
+  if (ctx->user_modify)
+  {
     // update the user_version for any modify ops, except for the watch op
     ctx->user_at_version = MAX(info.last_user_version, ctx->new_obs.oi.user_version) + 1;
+
     /* In order for new clients and old clients to interoperate properly
      * when exchanging versions, we need to lower bound the user_version
      * (which our new clients pay proper attention to)
      * by the at_version (which is all the old clients can ever see). */
     if (ctx->at_version.version > ctx->user_at_version)
+    {
       ctx->user_at_version = ctx->at_version.version;
+    }
+
     ctx->new_obs.oi.user_version = ctx->user_at_version;
   }
+
   ctx->bytes_written = ctx->op_t->get_bytes_written();
  
-  if (ctx->new_obs.exists) {
+  if (ctx->new_obs.exists)
+  {
     // on the head object
     ctx->new_obs.oi.version = ctx->at_version;
     ctx->new_obs.oi.prior_version = ctx->obs->oi.version;
     ctx->new_obs.oi.last_reqid = ctx->reqid;
-    if (ctx->mtime != utime_t()) {
+    if (ctx->mtime != utime_t())
+    {
       ctx->new_obs.oi.mtime = ctx->mtime;
       dout(10) << " set mtime to " << ctx->new_obs.oi.mtime << dendl;
       ctx->new_obs.oi.local_mtime = now;
-    } else {
+    }
+    else
+    {
       dout(10) << " mtime unchanged at " << ctx->new_obs.oi.mtime << dendl;
     }
 
@@ -6992,41 +7026,54 @@ void ReplicatedPG::finish_ctx(OpContext *ctx, int log_op_type, bool maintain_ssc
     ::encode(ctx->new_obs.oi, bv);
     attrs[OI_ATTR].claim(bv);
 
-    if (soid.snap == CEPH_NOSNAP) {
-      dout(10) << " final snapset " << ctx->new_snapset
-	       << " in " << soid << dendl;
+    if (soid.snap == CEPH_NOSNAP)
+    {
+      dout(10) << " final snapset " << ctx->new_snapset << " in " << soid << dendl;
       attrs[SS_ATTR].claim(bss);
-    } else {
+    }
+    else
+    {
       dout(10) << " no snapset (this is a clone)" << dendl;
     }
+
     setattrs_maybe_cache(ctx->obc, ctx, ctx->op_t.get(), attrs);
 
-    if (pool.info.require_rollback()) {
+    if (pool.info.require_rollback())
+    {
       set<string> changing;
       changing.insert(OI_ATTR);
+
       if (!soid.is_snap())
-	changing.insert(SS_ATTR);
+      {
+        changing.insert(SS_ATTR);
+      }
       ctx->obc->fill_in_setattrs(changing, &(ctx->mod_desc));
-    } else {
+    }
+    else
+    {
       // replicated pools are never rollbackable in this case
       ctx->mod_desc.mark_unrollbackable();
     }
-  } else {
+  }
+  else
+  {
     ctx->new_obs.oi = object_info_t(ctx->obc->obs.oi.soid);
   }
 
   // append to log
   ctx->log.push_back(pg_log_entry_t(log_op_type, soid, ctx->at_version,
-				    ctx->obs->oi.version,
-				    ctx->user_at_version, ctx->reqid,
-				    ctx->mtime));
-  if (soid.snap < CEPH_NOSNAP) {
-    switch (log_op_type) {
+        ctx->obs->oi.version,
+        ctx->user_at_version, ctx->reqid,
+        ctx->mtime));
+
+  if (soid.snap < CEPH_NOSNAP)
+  {
+    switch (log_op_type)
+    {
     case pg_log_entry_t::MODIFY:
     case pg_log_entry_t::PROMOTE:
     case pg_log_entry_t::CLEAN:
-      dout(20) << __func__ << " encoding snaps " << ctx->new_obs.oi.snaps
-	       << dendl;
+      dout(20) << __func__ << " encoding snaps " << ctx->new_obs.oi.snaps << dendl;
       ::encode(ctx->new_obs.oi.snaps, ctx->log.back().snaps);
       break;
     default:
@@ -7035,7 +7082,8 @@ void ReplicatedPG::finish_ctx(OpContext *ctx, int log_op_type, bool maintain_ssc
   }
 
   ctx->log.back().mod_desc.claim(ctx->mod_desc);
-  if (!ctx->extra_reqids.empty()) {
+  if (!ctx->extra_reqids.empty())
+  {
     dout(20) << __func__ << "  extra_reqids " << ctx->extra_reqids << dendl;
     ctx->log.back().extra_reqids.swap(ctx->extra_reqids);
   }
@@ -7043,11 +7091,13 @@ void ReplicatedPG::finish_ctx(OpContext *ctx, int log_op_type, bool maintain_ssc
   // apply new object state.
   ctx->obc->obs = ctx->new_obs;
 
-  if (soid.is_head() && !ctx->obc->obs.exists &&
-      (!maintain_ssc || ctx->cache_evict)) {
+  if (soid.is_head() && !ctx->obc->obs.exists && (!maintain_ssc || ctx->cache_evict))
+  {
     ctx->obc->ssc->exists = false;
     ctx->obc->ssc->snapset = SnapSet();
-  } else {
+  }
+  else
+  {
     ctx->obc->ssc->exists = true;
     ctx->obc->ssc->snapset = ctx->new_snapset;
   }
@@ -7060,22 +7110,28 @@ void ReplicatedPG::apply_ctx_stats(OpContext *ctx, bool scrub_ok)
   info.stats.stats.add(ctx->delta_stats);
 
   const hobject_t& soid = ctx->obs->oi.soid;
-  for (set<pg_shard_t>::iterator i = backfill_targets.begin();
-       i != backfill_targets.end();
-       ++i) {
+  for (set<pg_shard_t>::iterator i = backfill_targets.begin(); i != backfill_targets.end(); ++i)
+  {
     pg_shard_t bt = *i;
     pg_info_t& pinfo = peer_info[bt];
     if (cmp(soid, pinfo.last_backfill, get_sort_bitwise()) <= 0)
+    {
       pinfo.stats.stats.add(ctx->delta_stats);
+    }
     else if (cmp(soid, last_backfill_started, get_sort_bitwise()) <= 0)
+    {
       pending_backfill_updates[soid].stats.add(ctx->delta_stats);
+    }
   }
 
-  if (!scrub_ok && scrubber.active) {
-    assert(cmp(soid, scrubber.start, get_sort_bitwise()) < 0 ||
-	   cmp(soid, scrubber.end, get_sort_bitwise()) >= 0);
+  if (!scrub_ok && scrubber.active)
+  {
+    assert(cmp(soid, scrubber.start, get_sort_bitwise()) < 0 || cmp(soid, scrubber.end, get_sort_bitwise()) >= 0);
+
     if (cmp(soid, scrubber.start, get_sort_bitwise()) < 0)
+    {
       scrub_cstat.add(ctx->delta_stats);
+    }
   }
 }
 

@@ -3440,7 +3440,8 @@ struct ObjectContext;
 
 typedef ceph::shared_ptr<ObjectContext> ObjectContextRef;
 
-struct ObjectContext {
+struct ObjectContext 
+{
   ObjectState obs;
 
   SnapSetContext *ssc;  // may be null
@@ -3464,21 +3465,23 @@ public:
   // attr cache
   map<string, bufferlist> attr_cache;
 
-  void fill_in_setattrs(const set<string> &changing, ObjectModDesc *mod) {
+  void fill_in_setattrs(const set<string> &changing, ObjectModDesc *mod)
+  {
     map<string, boost::optional<bufferlist> > to_set;
-    for (set<string>::const_iterator i = changing.begin();
-	 i != changing.end();
-	 ++i) {
+    for (set<string>::const_iterator i = changing.begin(); i != changing.end(); ++i)
+    {
       map<string, bufferlist>::iterator iter = attr_cache.find(*i);
-      if (iter != attr_cache.end()) {
-	to_set[*i] = iter->second;
-      } else {
-	to_set[*i];
+      if (iter != attr_cache.end())
+      {
+        to_set[*i] = iter->second;
+      }
+      else
+      {
+        to_set[*i];
       }
     }
     mod->setattrs(to_set);
   }
-  
 
   //Yuanguo: Question: who is protecting RWState::state and RWState::count from being accessed concurrently? For example:
   //         rwstate is in RWNONE state, then
@@ -3495,15 +3498,19 @@ public:
   //                             ObjectContext::get_excl
   //Yuanguo: Answer:
   //
-  struct RWState {
-    enum State {
+  struct RWState
+  {
+    enum State
+    {
       RWNONE,
       RWREAD,
       RWWRITE,
       RWEXCL,
     };
-    static const char *get_state_name(State s) {
-      switch (s) {
+    static const char *get_state_name(State s)
+    {
+      switch (s)
+      {
       case RWNONE: return "none";
       case RWREAD: return "read";
       case RWWRITE: return "write";
@@ -3511,7 +3518,8 @@ public:
       default: return "???";
       }
     }
-    const char *get_state_name() const {
+    const char *get_state_name() const
+    {
       return get_state_name(state);
     }
 
@@ -3530,145 +3538,207 @@ public:
     /// if set, requeue snaptrim on lock release
     bool snaptrimmer_write_marker:1;
 
-    RWState()
-      : count(0),
-	state(RWNONE),
-	recovery_read_marker(false),
-	snaptrimmer_write_marker(false)
-    {}
-    bool get_read(OpRequestRef op) {
-      if (get_read_lock()) {
-	return true;
-      } // else
+    RWState() : count(0), state(RWNONE), recovery_read_marker(false), snaptrimmer_write_marker(false)
+    {
+    }
+
+    bool get_read(OpRequestRef op)
+    {
+      if (get_read_lock())
+      {
+        return true;
+      }
+
+      // else
       waiters.push_back(op);
       return false;
     }
+
     /// this function adjusts the counts if necessary
-    bool get_read_lock() {
+    bool get_read_lock()
+    {
       // don't starve anybody!
-      if (!waiters.empty()) {
-	return false;
+      if (!waiters.empty())
+      {
+        return false;
       }
-      switch (state) {
+
+      switch (state)
+      {
       case RWNONE:
-	assert(count == 0);
-	state = RWREAD;
-	// fall through
+        assert(count == 0);
+        state = RWREAD;
+        // fall through
       case RWREAD:
-	count++;
-	return true;
+        count++;
+        return true;
+
       case RWWRITE:
-	return false;
+        return false;
+
       case RWEXCL:
-	return false;
+        return false;
+
       default:
-	assert(0 == "unhandled case");
-	return false;
+        assert(0 == "unhandled case");
+        return false;
       }
     }
 
-    bool get_write(OpRequestRef op, bool greedy=false) {
-      if (get_write_lock(greedy)) {
-	return true;
-      } // else
+    bool get_write(OpRequestRef op, bool greedy=false)
+    {
+      if (get_write_lock(greedy))
+      {
+        return true;
+      } 
+      
+      // else
       if (op)
-	waiters.push_back(op);
+      {
+        waiters.push_back(op);
+      }
+
       return false;
     }
-    bool get_write_lock(bool greedy=false) {
-      if (!greedy) {
-	// don't starve anybody!
-	if (!waiters.empty() ||
-	    recovery_read_marker) {
-	  return false;
-	}
+
+    bool get_write_lock(bool greedy=false)
+    {
+      if (!greedy)
+      {
+        // don't starve anybody!
+        if (!waiters.empty() || recovery_read_marker)
+        {
+          return false;
+        }
       }
-      switch (state) {
+
+      switch (state)
+      {
       case RWNONE:
-	assert(count == 0);
-	state = RWWRITE;
-	// fall through
+        assert(count == 0);
+        state = RWWRITE;
+        // fall through
       case RWWRITE:
-	count++;
-	return true; //Yuanguo: there can be more than one WRITE. For EXCL, there can only be one!
+        count++;
+        return true; //Yuanguo: there can be more than one WRITE. For EXCL, there can only be one!
+
       case RWREAD:
-	return false;
+        return false;
+
       case RWEXCL:
-	return false;
+        return false;
+
       default:
-	assert(0 == "unhandled case");
-	return false;
+        assert(0 == "unhandled case");
+        return false;
       }
     }
-    bool get_excl_lock() {
-      switch (state) {
+
+    bool get_excl_lock()
+    {
+      switch (state)
+      {
       case RWNONE:
-	assert(count == 0);
-	state = RWEXCL;
-	count = 1;
-	return true;
+        assert(count == 0);
+        state = RWEXCL;
+        count = 1;
+        return true;
+
       case RWWRITE:
-	return false;
+        return false;
+
       case RWREAD:
-	return false;
+        return false;
+
       case RWEXCL:
-	return false;  //Yuanguo: there can only be one EXCL!
+        return false;  //Yuanguo: there can only be one EXCL!
+
       default:
-	assert(0 == "unhandled case");
-	return false;
+        assert(0 == "unhandled case");
+        return false;
       }
     }
-    bool get_excl(OpRequestRef op) {
-      if (get_excl_lock()) {
-	return true;
-      } // else
+
+    bool get_excl(OpRequestRef op)
+    {
+      if (get_excl_lock())
+      {
+        return true;
+      }
+      
+      // else
       if (op)
-	waiters.push_back(op);
+      {
+        waiters.push_back(op);
+      }
+
       return false;
     }
+
     /// same as get_write_lock, but ignore starvation
-    bool take_write_lock() {
-      if (state == RWWRITE) {
-	count++;
-	return true;
+    bool take_write_lock()
+    {
+      if (state == RWWRITE)
+      {
+        count++;
+        return true;
       }
       return get_write_lock();
     }
-    void dec(list<OpRequestRef> *requeue) {
+
+    void dec(list<OpRequestRef> *requeue)
+    {
       assert(count > 0);
       assert(requeue);
       count--;
-      if (count == 0) {
-	state = RWNONE;
-	requeue->splice(requeue->end(), waiters);
+
+      if (count == 0)
+      {
+        state = RWNONE;
+        requeue->splice(requeue->end(), waiters);
       }
     }
-    void put_read(list<OpRequestRef> *requeue) {
+
+    void put_read(list<OpRequestRef> *requeue)
+    {
       assert(state == RWREAD);
       dec(requeue);
     }
-    void put_write(list<OpRequestRef> *requeue) {
+
+    void put_write(list<OpRequestRef> *requeue)
+    {
       assert(state == RWWRITE);
       dec(requeue);
     }
-    void put_excl(list<OpRequestRef> *requeue) {
+
+    void put_excl(list<OpRequestRef> *requeue)
+    {
       assert(state == RWEXCL);
       dec(requeue);
     }
+
     bool empty() const { return state == RWNONE; }
   } rwstate;
 
-  bool get_read(OpRequestRef op) {
+  bool get_read(OpRequestRef op)
+  {
     return rwstate.get_read(op);
   }
-  bool get_write(OpRequestRef op) {
+
+  bool get_write(OpRequestRef op)
+  {
     return rwstate.get_write(op, false);
   }
-  bool get_excl(OpRequestRef op) {
+
+  bool get_excl(OpRequestRef op)
+  {
     return rwstate.get_excl(op);
   }
-  bool get_lock_type(OpRequestRef op, RWState::State type) {
-    switch (type) {
+
+  bool get_lock_type(OpRequestRef op, RWState::State type)
+  {
+    switch (type)
+    {
     case RWState::RWWRITE:
       return get_write(op);
     case RWState::RWREAD:
@@ -3680,74 +3750,98 @@ public:
       return true;
     }
   }
-  bool get_write_greedy(OpRequestRef op) {
+
+  bool get_write_greedy(OpRequestRef op)
+  {
     return rwstate.get_write(op, true);
   }
-  bool get_snaptrimmer_write() {
-    if (rwstate.get_write_lock()) {
+
+  bool get_snaptrimmer_write()
+  {
+    if (rwstate.get_write_lock())
+    {
       return true;
-    } else {
+    }
+    else
+    {
       rwstate.snaptrimmer_write_marker = true;
       return false;
     }
   }
-  bool get_recovery_read() {
+
+  bool get_recovery_read()
+  {
     rwstate.recovery_read_marker = true;
-    if (rwstate.get_read_lock()) {
+
+    if (rwstate.get_read_lock())
+    {
       return true;
     }
     return false;
   }
-  void drop_recovery_read(list<OpRequestRef> *ls) {
+
+  void drop_recovery_read(list<OpRequestRef> *ls)
+  {
     assert(rwstate.recovery_read_marker);
     rwstate.put_read(ls);
     rwstate.recovery_read_marker = false;
   }
-  void put_read(list<OpRequestRef> *to_wake) {
+
+  void put_read(list<OpRequestRef> *to_wake)
+  {
     rwstate.put_read(to_wake);
   }
-  void put_excl(list<OpRequestRef> *to_wake,
-		 bool *requeue_recovery,
-		 bool *requeue_snaptrimmer) {
+
+  void put_excl(list<OpRequestRef> *to_wake, bool *requeue_recovery, bool *requeue_snaptrimmer)
+  {
+    //Yuanguo: to_wake is a container. When I put_excl (relase the excl lock),
+    //    the OpRequests that were blocked by me should be woken up. Put them
+    //    in the 'to_wake' container!
     rwstate.put_excl(to_wake);
 
     //Yuanguo: when I held the lock, a get_recovery_read() failed (but it set rwstate.recovery_read_marker = true)
     //    now, I drop the lock, return *requeue_recovery as true;
-    if (rwstate.empty() && rwstate.recovery_read_marker) {
+    if (rwstate.empty() && rwstate.recovery_read_marker)
+    {
       rwstate.recovery_read_marker = false;
       *requeue_recovery = true;
     }
 
     //Yuanguo: similar with recovery_read_marker;
-    if (rwstate.empty() && rwstate.snaptrimmer_write_marker) {
+    if (rwstate.empty() && rwstate.snaptrimmer_write_marker)
+    {
       rwstate.snaptrimmer_write_marker = false;
       *requeue_snaptrimmer = true;
     }
   }
-  void put_write(list<OpRequestRef> *to_wake,
-		 bool *requeue_recovery,
-		 bool *requeue_snaptrimmer) {
+
+  void put_write(list<OpRequestRef> *to_wake, bool *requeue_recovery, bool *requeue_snaptrimmer)
+  {
+    //Yuanguo: to_wake is a container. When I put_write (relase the write lock),
+    //    the OpRequests that were blocked by me (if there's no other blockers) 
+    //    should be woken up. Put them in the 'to_wake' container!
     rwstate.put_write(to_wake);
 
     //Yuanguo: when I and some other write-ops held the lock, a get_recovery_read() failed (but it set rwstate.recovery_read_marker = true)
     //    now, I drop the lock (I am the last one dropping the lock), return *requeue_recovery as true;
-    if (rwstate.empty() && rwstate.recovery_read_marker) {
+    if (rwstate.empty() && rwstate.recovery_read_marker)
+    {
       rwstate.recovery_read_marker = false;
       *requeue_recovery = true;
     }
 
     //Yuanguo: similar with recovery_read_marker;
-    if (rwstate.empty() && rwstate.snaptrimmer_write_marker) {
+    if (rwstate.empty() && rwstate.snaptrimmer_write_marker)
+    {
       rwstate.snaptrimmer_write_marker = false;
       *requeue_snaptrimmer = true;
     }
   }
-  void put_lock_type(
-    ObjectContext::RWState::State type,
-    list<OpRequestRef> *to_wake,
-    bool *requeue_recovery,
-    bool *requeue_snaptrimmer) {
-    switch (type) {
+
+  void put_lock_type(ObjectContext::RWState::State type, list<OpRequestRef> *to_wake, bool *requeue_recovery, bool *requeue_snaptrimmer)
+  {
+    switch (type)
+    {
     case ObjectContext::RWState::RWWRITE:
       return put_write(to_wake, requeue_recovery, requeue_snaptrimmer);
     case ObjectContext::RWState::RWREAD:
@@ -3758,7 +3852,9 @@ public:
       assert(0 == "invalid lock type");
     }
   }
-  bool is_request_pending() {
+
+  bool is_request_pending()
+  {
     return (rwstate.count > 0);
   }
 
@@ -3766,67 +3862,95 @@ public:
     : ssc(NULL),
       destructor_callback(0),
       lock("ReplicatedPG::ObjectContext::lock"),
-      unstable_writes(0), readers(0), writers_waiting(0), readers_waiting(0),
-      blocked(false), requeue_scrub_on_unblock(false) {}
-
-  ~ObjectContext() {
-    assert(rwstate.empty());
-    if (destructor_callback)
-      destructor_callback->complete(0);
+      unstable_writes(0),
+      readers(0),
+      writers_waiting(0),
+      readers_waiting(0),
+      blocked(false),
+      requeue_scrub_on_unblock(false)
+  {
   }
 
-  void start_block() {
+  ~ObjectContext()
+  {
+    assert(rwstate.empty());
+    if (destructor_callback)
+    {
+      destructor_callback->complete(0);
+    }
+  }
+
+  void start_block()
+  {
     assert(!blocked);
     blocked = true;
   }
-  void stop_block() {
+
+  void stop_block()
+  {
     assert(blocked);
     blocked = false;
   }
-  bool is_blocked() const {
+
+  bool is_blocked() const
+  {
     return blocked;
   }
 
   // do simple synchronous mutual exclusion, for now.  no waitqueues or anything fancy.
-  void ondisk_write_lock() {
+  void ondisk_write_lock()
+  {
     lock.Lock();
     writers_waiting++;  //Yuanguo: I am a waiting writer;
     while (readers_waiting || readers) //Yuanguo: wait until there is no readers_waiting or readers;
+    {
       cond.Wait(lock);
+    }
     writers_waiting--;  //Yuanguo: I am not a waiting writer now,
     unstable_writes++;  //Yuanguo: I am a writer!
     lock.Unlock();
   }
-  void ondisk_write_unlock() {
+
+  void ondisk_write_unlock()
+  {
     lock.Lock();
     assert(unstable_writes > 0);
     unstable_writes--;  //Yuanguo: I am not a writer now!
-    if (!unstable_writes && readers_waiting) //Yuanguo: there is no writer, but there are readers waiting,
+    if (!unstable_writes && readers_waiting) //Yuanguo: there is no writer, but there are readers waiting
+    {
       cond.Signal();   //Yuanguo: signal them.
+    }
     lock.Unlock();
   }
-  void ondisk_read_lock() {
+
+  void ondisk_read_lock()
+  {
     lock.Lock();
     readers_waiting++;
     while (unstable_writes)
+    {
       cond.Wait(lock);
+    }
     readers_waiting--;
     readers++;
     lock.Unlock();
   }
-  void ondisk_read_unlock() {
+
+  void ondisk_read_unlock()
+  {
     lock.Lock();
     assert(readers > 0);
     readers--;
     if (!readers && writers_waiting)
+    {
       cond.Signal();
+    }
     lock.Unlock();
   }
 
   /// in-progress copyfrom ops for this object
   bool blocked:1;
   bool requeue_scrub_on_unblock:1;    // true if we need to requeue scrub on unblock
-
 };
 
 inline ostream& operator<<(ostream& out, const ObjectState& obs)
