@@ -2029,8 +2029,7 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   {
     OSDOp& osd_op = *p;
 
-	  dout(99) << "YuanguoDbg: ReplicatedPG::do_op, osd_op.op=[" << osd_op.op.op << ", " << osd_op.op.flags << "] osd_op.soid=" << osd_op.soid << dendl;
-	  dout(99) << "YuanguoDbg: ReplicatedPG::do_op, osd_op=" << osd_op << dendl;
+	  dout(99) << "YuanguoDbg: ReplicatedPG::do_op, osd_op=" << osd_op << "[" << osd_op.op.op << ", " << osd_op.op.flags << ", " << osd_op.soid << "]" << dendl;
 
     // make sure LIST_SNAPS is on CEPH_SNAPDIR and nothing else
     if (osd_op.op.op == CEPH_OSD_OP_LIST_SNAPS && m->get_snapid() != CEPH_SNAPDIR) 
@@ -9245,6 +9244,15 @@ ObjectContextRef ReplicatedPG::get_object_context(const hobject_t& soid,
         dout(10) << __func__ << ": " << obc << " " << soid << " " << obc->rwstate << " oi: " << obc->obs.oi 
               << " ssc: " << obc->ssc << " snapset: " << obc->ssc->snapset << dendl;
 	
+        if(obc->ssc)
+        {
+          dout(99) << "YuanguoDbg: " << __func__ << ": snapset context=[" << obc->ssc->ref        << ", " 
+                                                                          << obc->ssc->registered << ", " 
+                                                                          << obc->ssc->exists     << ", " 
+                                                                          << obc->ssc->oid        << ", "
+                                                                          << obc->ssc->snapset    << "]" << dendl;
+        }
+
         return obc;
       }
 
