@@ -1589,10 +1589,49 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   m->finish_decode();
   m->clear_payload();
 
-  //Yuanguo:  m->get_reqid().name is the client handle, such client.4135;  
+  ////////////////////////  Dump Op INFO ////////////////////////
+	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, op:{" 
+    << " reqid=[" << op->get_reqid().name << "," << op->get_reqid().tid << "," << op->get_reqid().inc << "]" 
+    << " dequeued_time=" << op->get_dequeued_time().to_msec() 
+    << " }" 
+    << dendl;
+
+  //Yuanguo:  m->get_reqid().name is the client handle, e.g. "client.4135";
   //          m->get_pg(): pool.m_seed, such as 1.df84676b; but the dirname in osd.x/current/ is "1.2b", why??
-	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, reqid=[" << m->get_reqid().name << ", " << m->get_reqid().tid << "] oid=" 
-           << m->get_oid() << " pgid=" << m->get_pg() << " flags=" << m->get_flags() << " snapid=" << m->get_snapid() <<  dendl;
+	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, m:{" 
+    << " reqid=[" << m->get_reqid().name << "," << m->get_reqid().tid << "," << m->get_reqid().inc << "]" 
+    << " client_inc=" << m->get_client_inc() 
+    << " osdmap_epoch=" << m->get_map_epoch() 
+    << " flags=" << m->get_flags() 
+    << " mtime=" << m->get_mtime().to_msec() 
+    << " reassert_version=" << m->get_version() 
+    << " retry_attempt=" << m->get_retry_attempt() 
+    << " oid=" << m->get_oid() 
+    << " oloc=[" << m->get_object_locator().pool << "," << m->get_object_locator().key << "," << m->get_object_locator().nspace << "," << m->get_object_locator().hash << "]" 
+    << " pgid=" << m->get_pg() 
+    << " snapid=" << m->get_snapid() 
+    << " snap_seq=" << m->get_snap_seq() 
+    << " }" 
+    << dendl;
+
+	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, m->ops.size=" << m->ops.size() << dendl;
+  for(vector<OSDOp>::const_iterator citer=m->ops.begin(); citer!=m->ops.end(); ++citer)
+  {
+    dout(99) << "YuanguoDbg: ReplicatedPG::do_op, m->ops: " << *citer 
+             << " ++++++ {"
+             << " op=[" << citer->op.op << "," << citer->op.flags << "]" 
+             << " soid=" << citer->soid 
+             << " }" 
+             << dendl;
+  }
+
+	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, m->snaps.size=" << m->get_snaps().size() << dendl;
+  for(vector<snapid_t>::const_iterator citer=m->get_snaps().begin(); citer!=m->get_snaps().end(); ++citer)
+  {
+    dout(99) << "YuanguoDbg: ReplicatedPG::do_op, m->snaps: " << *citer << dendl;
+  }
+  ////////////////////////  Dump Op INFO ////////////////////////
+
 
   if (m->has_flag(CEPH_OSD_FLAG_PARALLELEXEC)) {
     // not implemented.
@@ -3096,12 +3135,12 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
     ctx->at_version = get_next_version();
     ctx->mtime = m->get_mtime();
 
-    dout(10) << "do_op " << soid << " " << ctx->ops << " ov " << obc->obs.oi.version << " av " << ctx->at_version 
+    dout(10) << "ReplicatedPG::execute_ctx " << soid << " " << ctx->ops << " ov " << obc->obs.oi.version << " av " << ctx->at_version 
                                  << " snapc " << ctx->snapc << " snapset " << obc->ssc->snapset << dendl;  
   }
   else
   {
-    dout(10) << "do_op " << soid << " " << ctx->ops << " ov " << obc->obs.oi.version << dendl;  
+    dout(10) << "ReplicatedPG::execute_ctx " << soid << " " << ctx->ops << " ov " << obc->obs.oi.version << dendl;  
   }
 
   if (!ctx->user_at_version)
