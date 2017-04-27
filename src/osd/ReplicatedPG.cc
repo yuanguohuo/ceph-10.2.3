@@ -1655,13 +1655,24 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   if ((m->get_flags() & (CEPH_OSD_FLAG_BALANCE_READS |
 			 CEPH_OSD_FLAG_LOCALIZE_READS)) &&       //Yuanguo: balance or localize flag is set
       op->may_read() &&                        //Yuanguo: AND has read op
-      !(op->may_write() || op->may_cache())) { //Yuanguo: AND has no write or cache op
+      !(op->may_write() || op->may_cache()))   //Yuanguo: AND has no write or cache op
+  {
+    //Yuanguo: balance or localize flag is set AND has read op AND has no write or cache op, so:
+    //    if I am primary OSD or replica OSD, it's OK;
+    //    else, misdirected error; 
     // balanced reads; any replica will do
-    if (!(is_primary() || is_replica())) {     //Yuanguo: I am not primary or replica osd, must be misdirected to me!
+    if (!(is_primary() || is_replica()))
+    {
+      //Yuanguo: I am not primary or replica osd, must be misdirected to me!
       osd->handle_misdirected_op(this, op);
       return;
     }
-  } else { //Yuanguo: write or cache op must be handled by primary; read op without balance/localize must be handled by primary;
+  }
+  else
+  {
+    //Yuanguo: write or cache op must be handled by primary; read op without balance/localize must be handled by primary;
+    //    if I am primary OSD, it's OK;
+    //    else, misdirected error;
     // normal case; must be primary
     if (!is_primary()) {   //Yuanguo: I am not primary osd, must be misdirected to me!
       osd->handle_misdirected_op(this, op);
