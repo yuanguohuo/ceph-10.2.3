@@ -2298,7 +2298,7 @@ void ReplicatedPG::do_op(OpRequestRef& op)
     //Yuanguo: MOSDOp-A and MOSDOp-B of a given object will be sent to the same OSD (omit backup OSDs for now),
     //  but this OSD has multiple threads. The lock here is to prevent more than one threads from accessing the given
     //  object at the same time.
-    dout(99) << " YuanguoDbg: ReplicatedPG::do_op, got rw locks of object: " << m->get_oid() << " r=" << r << dendl;
+    dout(99) << " YuanguoDbg: ReplicatedPG::do_op, got rw locks of object: " << m->get_oid() << " lock_type=" << ctx->lock_type << " r=" << r << dendl;
   }
 
   if (r) 
@@ -4387,7 +4387,8 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 
   dout(10) << "do_osd_op " << soid << " " << ops << dendl;
 
-  for (vector<OSDOp>::iterator p = ops.begin(); p != ops.end(); ++p, ctx->current_osd_subop_num++) {
+  for (vector<OSDOp>::iterator p = ops.begin(); p != ops.end(); ++p, ctx->current_osd_subop_num++)
+  {
     OSDOp& osd_op = *p;
     ceph_osd_op& op = osd_op.op;
 
@@ -4398,28 +4399,31 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
     tracepoint(osd, do_osd_op_pre, soid.oid.name.c_str(), soid.snap.val, op.op, ceph_osd_op_name(op.op), op.flags);
 
     dout(10) << "do_osd_op  " << osd_op << dendl;
+	  dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, osd_op=" << osd_op << "[" << osd_op.op.op << ", " << osd_op.op.flags << ", " << osd_op.soid << "]" << dendl;
 
     bufferlist::iterator bp = osd_op.indata.begin();
 
     // user-visible modifcation?
-    switch (op.op) {
+    switch (op.op)
+    {
       // non user-visible modifications
-    case CEPH_OSD_OP_WATCH:
-    case CEPH_OSD_OP_CACHE_EVICT:
-    case CEPH_OSD_OP_CACHE_FLUSH:
-    case CEPH_OSD_OP_CACHE_TRY_FLUSH:
-    case CEPH_OSD_OP_UNDIRTY:
-    case CEPH_OSD_OP_COPY_FROM:  // we handle user_version update explicitly
-    case CEPH_OSD_OP_CACHE_PIN:
-    case CEPH_OSD_OP_CACHE_UNPIN:
-      break;
-    default:
-      if (op.op & CEPH_OSD_OP_MODE_WR)
-	ctx->user_modify = true;
+      case CEPH_OSD_OP_WATCH:
+      case CEPH_OSD_OP_CACHE_EVICT:
+      case CEPH_OSD_OP_CACHE_FLUSH:
+      case CEPH_OSD_OP_CACHE_TRY_FLUSH:
+      case CEPH_OSD_OP_UNDIRTY:
+      case CEPH_OSD_OP_COPY_FROM:  // we handle user_version update explicitly
+      case CEPH_OSD_OP_CACHE_PIN:
+      case CEPH_OSD_OP_CACHE_UNPIN:
+        break;
+      default:
+        if (op.op & CEPH_OSD_OP_MODE_WR)
+          ctx->user_modify = true;
     }
 
     ObjectContextRef src_obc;
-    if (ceph_osd_op_type_multi(op.op)) {
+    if (ceph_osd_op_type_multi(op.op))
+    {
       MOSDOp *m = static_cast<MOSDOp *>(ctx->op->get_req());
       object_locator_t src_oloc;
       get_src_oloc(soid.oid, m->get_object_locator(), src_oloc);
@@ -4433,431 +4437,573 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
     // munge -1 truncate to 0 truncate
     if (ceph_osd_op_uses_extent(op.op) &&
         op.extent.truncate_seq == 1 &&
-        op.extent.truncate_size == (-1ULL)) {
+        op.extent.truncate_size == (-1ULL))
+    {
       op.extent.truncate_size = 0;
       op.extent.truncate_seq = 0;
     }
 
     // munge ZERO -> TRUNCATE?  (don't munge to DELETE or we risk hosing attributes)
     if (op.op == CEPH_OSD_OP_ZERO &&
-	obs.exists &&
-	op.extent.offset < cct->_conf->osd_max_object_size &&
-	op.extent.length >= 1 &&
-	op.extent.length <= cct->_conf->osd_max_object_size &&
-	op.extent.offset + op.extent.length >= oi.size) {
-      if (op.extent.offset >= oi.size) {
+        obs.exists &&
+        op.extent.offset < cct->_conf->osd_max_object_size &&
+        op.extent.length >= 1 &&
+        op.extent.length <= cct->_conf->osd_max_object_size &&
+        op.extent.offset + op.extent.length >= oi.size)
+    {
+      if (op.extent.offset >= oi.size)
+      {
         // no-op
-	goto fail;
+        goto fail;
       }
-      dout(10) << " munging ZERO " << op.extent.offset << "~" << op.extent.length
-	       << " -> TRUNCATE " << op.extent.offset << " (old size is " << oi.size << ")" << dendl;
+
+      dout(10) << " munging ZERO " << op.extent.offset << "~" << op.extent.length << " -> TRUNCATE " << op.extent.offset << " (old size is " << oi.size << ")" << dendl;
       op.op = CEPH_OSD_OP_TRUNCATE;
     }
 
-    switch (op.op) {
-      
+    switch (op.op)
+    {
       // --- READS ---
+      case CEPH_OSD_OP_SYNC_READ:
 
-    case CEPH_OSD_OP_SYNC_READ:
-      if (pool.info.require_rollback()) {
-	result = -EOPNOTSUPP;
-	break;
-      }
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_SYNC_READ" << dendl;
+
+        if (pool.info.require_rollback())
+        {
+          result = -EOPNOTSUPP;
+          break;
+        }
       // fall through
-    case CEPH_OSD_OP_READ:
-      ++ctx->num_read;
-      {
-	__u32 seq = oi.truncate_seq;
-	uint64_t size = oi.size;
-	tracepoint(osd, do_osd_op_pre_read, soid.oid.name.c_str(), soid.snap.val, size, seq, op.extent.offset, op.extent.length, op.extent.truncate_size, op.extent.truncate_seq);
-	bool trimmed_read = false;
-	// are we beyond truncate_size?
-	if ( (seq < op.extent.truncate_seq) &&
-	     (op.extent.offset + op.extent.length > op.extent.truncate_size) )
-	  size = op.extent.truncate_size;
+      case CEPH_OSD_OP_READ:
 
-	if (op.extent.length == 0) //length is zero mean read the whole object
-	  op.extent.length = size;
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_READ" << dendl;
 
-	if (op.extent.offset >= size) {
-	  op.extent.length = 0;
-	  trimmed_read = true;
-	} else if (op.extent.offset + op.extent.length > size) {
-	  op.extent.length = size - op.extent.offset;
-	  trimmed_read = true;
-	}
+        ++ctx->num_read;
 
-	// read into a buffer
-	bool async = false;
-	if (trimmed_read && op.extent.length == 0) {
-	  // read size was trimmed to zero and it is expected to do nothing
-	  // a read operation of 0 bytes does *not* do nothing, this is why
-	  // the trimmed_read boolean is needed
-	} else if (pool.info.require_rollback()) {
-	  async = true;
-	  boost::optional<uint32_t> maybe_crc;
-	  // If there is a data digest and it is possible we are reading
-	  // entire object, pass the digest.  FillInVerifyExtent will
-	  // will check the oi.size again.
-	  if (oi.is_data_digest() && op.extent.offset == 0 &&
-	      op.extent.length >= oi.size)
-	    maybe_crc = oi.data_digest;
-	  ctx->pending_async_reads.push_back(
-	    make_pair(
-	      boost::make_tuple(op.extent.offset, op.extent.length, op.flags),
-	      make_pair(&osd_op.outdata,
-			new FillInVerifyExtent(&op.extent.length, &osd_op.rval,
-				&osd_op.outdata, maybe_crc, oi.size, osd,
-				soid, op.flags))));
-	  dout(10) << " async_read noted for " << soid << dendl;
-	} else {
-	  int r = pgbackend->objects_read_sync(
-	    soid, op.extent.offset, op.extent.length, op.flags, &osd_op.outdata);
-	  if (r >= 0)
-	    op.extent.length = r;
-	  else {
-	    result = r;
-	    op.extent.length = 0;
-	  }
-	  dout(10) << " read got " << r << " / " << op.extent.length
-		   << " bytes from obj " << soid << dendl;
+        {
+          __u32 seq = oi.truncate_seq;
+          uint64_t size = oi.size;
 
-	  // whole object?  can we verify the checksum?
-	  if (op.extent.length == oi.size && oi.is_data_digest()) {
-	    uint32_t crc = osd_op.outdata.crc32c(-1);
-	    if (oi.data_digest != crc) {
-	      osd->clog->error() << info.pgid << std::hex
-				 << " full-object read crc 0x" << crc
-				 << " != expected 0x" << oi.data_digest
-				 << std::dec << " on " << soid;
-	      // FIXME fall back to replica or something?
-	      result = -EIO;
-	    }
-	  }
-	}
-	if (first_read) {
-	  first_read = false;
-	  ctx->data_off = op.extent.offset;
-	}
-	// XXX the op.extent.length is the requested length for async read
-	// On error this length is changed to 0 after the error comes back.
-	ctx->delta_stats.num_rd_kb += SHIFT_ROUND_UP(op.extent.length, 10);
-	ctx->delta_stats.num_rd++;
+          tracepoint(osd, do_osd_op_pre_read, soid.oid.name.c_str(), soid.snap.val, size, seq, 
+                     op.extent.offset, op.extent.length, op.extent.truncate_size, op.extent.truncate_seq);
 
-	// Skip checking the result and just proceed to the next operation
-	if (async)
-	  continue;
+          dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, soid.oid=" << soid.oid
+                                                 << " soid.snap.val=" << soid.snap.val
+                                                 << " size=" << size
+                                                 << " seq=" << seq
+                                                 << " op.extent=[" << op.extent.offset << "," 
+                                                                   << op.extent.length << "," 
+                                                                   << op.extent.truncate_size << "," 
+                                                                   << op.extent.truncate_seq << "]"
+                                                 << dendl;
 
-      }
-      break;
+          bool trimmed_read = false;
 
-    /* map extents */
-    case CEPH_OSD_OP_MAPEXT:
-      tracepoint(osd, do_osd_op_pre_mapext, soid.oid.name.c_str(), soid.snap.val, op.extent.offset, op.extent.length);
-      if (pool.info.require_rollback()) {
-	result = -EOPNOTSUPP;
-	break;
-      }
-      ++ctx->num_read;
-      {
-	// read into a buffer
-	bufferlist bl;
-	int r = osd->store->fiemap(ch, ghobject_t(soid, ghobject_t::NO_GEN,
-						  info.pgid.shard),
-				   op.extent.offset, op.extent.length, bl);
-	osd_op.outdata.claim(bl);
-	if (r < 0)
-	  result = r;
-	else
-	  ctx->delta_stats.num_rd_kb += SHIFT_ROUND_UP(bl.length(), 10);
-	ctx->delta_stats.num_rd++;
-	dout(10) << " map_extents done on object " << soid << dendl;
-      }
-      break;
+          // are we beyond truncate_size?
+          if ( (seq < op.extent.truncate_seq) &&
+               (op.extent.offset + op.extent.length > op.extent.truncate_size) )
+          {
+            size = op.extent.truncate_size;
+          }
 
-    /* map extents */
-    case CEPH_OSD_OP_SPARSE_READ:
-      tracepoint(osd, do_osd_op_pre_sparse_read, soid.oid.name.c_str(), soid.snap.val, oi.size, oi.truncate_seq, op.extent.offset, op.extent.length, op.extent.truncate_size, op.extent.truncate_seq);
-      if (op.extent.truncate_seq) {
-	dout(0) << "sparse_read does not support truncation sequence " << dendl;
-	result = -EINVAL;
-	break;
-      }
-      ++ctx->num_read;
-      if (pool.info.ec_pool()) {
-	// translate sparse read to a normal one if not supported
-	ctx->pending_async_reads.push_back(
-	  make_pair(
-	    boost::make_tuple(op.extent.offset, op.extent.length, op.flags),
-	    make_pair(&osd_op.outdata, new ToSparseReadResult(osd_op.outdata, op.extent.offset,
-							      op.extent.length))));
-	dout(10) << " async_read (was sparse_read) noted for " << soid << dendl;
-      } else {
-	// read into a buffer
-	bufferlist bl;
-        uint32_t total_read = 0;
-	int r = osd->store->fiemap(ch, ghobject_t(soid, ghobject_t::NO_GEN,
-						  info.pgid.shard),
-				   op.extent.offset, op.extent.length, bl);
-	if (r < 0)  {
-	  result = r;
+          if (op.extent.length == 0) //length is zero mean read the whole object
+          {
+            op.extent.length = size;
+          }
+
+          if (op.extent.offset >= size)
+          {
+            op.extent.length = 0;
+            trimmed_read = true;
+	        }
+          else if (op.extent.offset + op.extent.length > size)
+          {
+            op.extent.length = size - op.extent.offset;
+            trimmed_read = true;
+          }
+
+          // read into a buffer
+          bool async = false;
+          if (trimmed_read && op.extent.length == 0)
+          {
+            // read size was trimmed to zero and it is expected to do nothing
+            // a read operation of 0 bytes does *not* do nothing, this is why
+            // the trimmed_read boolean is needed
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, do nothing" << dendl;
+          }
+          else if (pool.info.require_rollback())
+          {
+            async = true;
+            boost::optional<uint32_t> maybe_crc;
+
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, async read" << dendl;
+
+            // If there is a data digest and it is possible we are reading
+            // entire object, pass the digest.  FillInVerifyExtent will
+            // will check the oi.size again.
+            if (oi.is_data_digest() && op.extent.offset == 0 &&
+                op.extent.length >= oi.size)
+            {
+              maybe_crc = oi.data_digest;
+            }
+
+            ctx->pending_async_reads.push_back(
+                make_pair(
+                  boost::make_tuple(op.extent.offset, op.extent.length, op.flags),
+                  make_pair(
+                    &osd_op.outdata,
+                    new FillInVerifyExtent(&op.extent.length, &osd_op.rval, &osd_op.outdata, maybe_crc, oi.size, osd, soid, op.flags)
+                  )
+                )
+            );
+
+            dout(10) << " async_read noted for " << soid << dendl;
+          }
+          else
+          {
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, sync read" << dendl;
+
+            int r = pgbackend->objects_read_sync(soid, op.extent.offset, op.extent.length, op.flags, &osd_op.outdata);
+            if (r >= 0)
+            {
+              op.extent.length = r;
+            }
+            else
+            {
+              result = r;
+              op.extent.length = 0;
+            }
+
+            dout(10) << " read got " << r << " / " << op.extent.length << " bytes from obj " << soid << dendl;
+
+            // whole object?  can we verify the checksum?
+            if (op.extent.length == oi.size && oi.is_data_digest())
+            {
+              uint32_t crc = osd_op.outdata.crc32c(-1);
+              if (oi.data_digest != crc)
+              {
+                osd->clog->error() << info.pgid << std::hex << " full-object read crc 0x" << crc << " != expected 0x" << oi.data_digest << std::dec << " on " << soid;
+                // FIXME fall back to replica or something?
+                result = -EIO;
+              }
+            }
+          }
+
+          if (first_read)
+          {
+            first_read = false;
+            ctx->data_off = op.extent.offset;
+          }
+
+          // XXX the op.extent.length is the requested length for async read
+          // On error this length is changed to 0 after the error comes back.
+          ctx->delta_stats.num_rd_kb += SHIFT_ROUND_UP(op.extent.length, 10);
+          ctx->delta_stats.num_rd++;
+
+          // Skip checking the result and just proceed to the next operation
+          if (async)
+          {
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, skip checking result for async read" << dendl;
+            continue;
+          }
+        }
+        break;
+
+        /* map extents */
+      case CEPH_OSD_OP_MAPEXT:
+
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_MAPEXT" << dendl;
+
+        tracepoint(osd, do_osd_op_pre_mapext, soid.oid.name.c_str(), soid.snap.val, op.extent.offset, op.extent.length);
+
+        if (pool.info.require_rollback())
+        {
+          dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_MAPEXT require rollback" << dendl;
+          result = -EOPNOTSUPP;
           break;
-	}
-        map<uint64_t, uint64_t> m;
-        bufferlist::iterator iter = bl.begin();
-        ::decode(m, iter);
-        map<uint64_t, uint64_t>::iterator miter;
-        bufferlist data_bl;
-	uint64_t last = op.extent.offset;
-        for (miter = m.begin(); miter != m.end(); ++miter) {
-	  // verify hole?
-	  if (cct->_conf->osd_verify_sparse_read_holes &&
-	      last < miter->first) {
-	    bufferlist t;
-	    uint64_t len = miter->first - last;
-	    r = pgbackend->objects_read_sync(soid, last, len, op.flags, &t);
-	    if (!t.is_zero()) {
-	      osd->clog->error() << coll << " " << soid << " sparse-read found data in hole "
-				<< last << "~" << len << "\n";
-	    }
-	  }
+        }
 
-          bufferlist tmpbl;
-	  r = pgbackend->objects_read_sync(soid, miter->first, miter->second, op.flags, &tmpbl);
+        ++ctx->num_read;
+        {
+          // read into a buffer
+          bufferlist bl;
+          int r = osd->store->fiemap(ch, ghobject_t(soid, ghobject_t::NO_GEN, info.pgid.shard), op.extent.offset, op.extent.length, bl);
+          osd_op.outdata.claim(bl);
+
           if (r < 0)
-            break;
+            result = r;
+          else
+            ctx->delta_stats.num_rd_kb += SHIFT_ROUND_UP(bl.length(), 10);
 
-          if (r < (int)miter->second) /* this is usually happen when we get extent that exceeds the actual file size */
-            miter->second = r;
-          total_read += r;
-          dout(10) << "sparse-read " << miter->first << "@" << miter->second << dendl;
-	  data_bl.claim_append(tmpbl);
-	  last = miter->first + r;
+          ctx->delta_stats.num_rd++;
+          dout(10) << " map_extents done on object " << soid << dendl;
         }
-        
-        if (r < 0) {
-          result = r;
+        break;
+
+      /* map extents */
+      case CEPH_OSD_OP_SPARSE_READ:
+
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_SPARSE_READ" << dendl;
+
+        tracepoint(osd, do_osd_op_pre_sparse_read, soid.oid.name.c_str(), soid.snap.val, 
+                   oi.size, oi.truncate_seq, op.extent.offset, op.extent.length, op.extent.truncate_size, op.extent.truncate_seq);
+
+        if (op.extent.truncate_seq)
+        {
+          dout(0) << "sparse_read does not support truncation sequence " << dendl;
+          result = -EINVAL;
           break;
         }
 
-	// verify trailing hole?
-	if (cct->_conf->osd_verify_sparse_read_holes) {
-	  uint64_t end = MIN(op.extent.offset + op.extent.length, oi.size);
-	  if (last < end) {
-	    bufferlist t;
-	    uint64_t len = end - last;
-	    r = pgbackend->objects_read_sync(soid, last, len, op.flags, &t);
-	    if (!t.is_zero()) {
-	      osd->clog->error() << coll << " " << soid << " sparse-read found data in hole "
-				<< last << "~" << len << "\n";
-	    }
-	  }
-	}
+        ++ctx->num_read;
+        if (pool.info.ec_pool())
+        {
+          dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_SPARSE_READ, ec pool" << dendl;
 
-	// Why SPARSE_READ need checksum? In fact, librbd always use sparse-read. 
-	// Maybe at first, there is no much whole objects. With continued use, more and more whole object exist.
-	// So from this point, for spare-read add checksum make sense.
-	if (total_read == oi.size && oi.is_data_digest()) {
-	  uint32_t crc = data_bl.crc32c(-1);
-	  if (oi.data_digest != crc) {
-	    osd->clog->error() << info.pgid << std::hex
-	      << " full-object read crc 0x" << crc
-	      << " != expected 0x" << oi.data_digest
-	      << std::dec << " on " << soid;
-	    // FIXME fall back to replica or something?
-	    result = -EIO;
-	    break;
-	  }
-	}
+          // translate sparse read to a normal one if not supported
+          ctx->pending_async_reads.push_back(
+              make_pair(
+                boost::make_tuple(op.extent.offset, op.extent.length, op.flags),
+                make_pair(&osd_op.outdata, new ToSparseReadResult(osd_op.outdata, op.extent.offset, op.extent.length))
+              )
+          );
+          dout(10) << " async_read (was sparse_read) noted for " << soid << dendl;
+        }
+        else
+        {
+          dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_SPARSE_READ, replicated pool" << dendl;
 
-        op.extent.length = total_read;
+          // read into a buffer
+          bufferlist bl;
+          uint32_t total_read = 0;
+          int r = osd->store->fiemap(ch, ghobject_t(soid, ghobject_t::NO_GEN, info.pgid.shard), op.extent.offset, op.extent.length, bl);
+          if (r < 0)
+          {
+            result = r;
+            break;
+          }
 
-        ::encode(m, osd_op.outdata); // re-encode since it might be modified
-        ::encode_destructively(data_bl, osd_op.outdata);
+          map<uint64_t, uint64_t> m;
+          bufferlist::iterator iter = bl.begin();
+          ::decode(m, iter);
 
-	dout(10) << " sparse_read got " << total_read << " bytes from object " << soid << dendl;
-      }
-      ctx->delta_stats.num_rd_kb += SHIFT_ROUND_UP(op.extent.length, 10);
-      ctx->delta_stats.num_rd++;
-      break;
+          map<uint64_t, uint64_t>::iterator miter;
+          bufferlist data_bl;
 
-    case CEPH_OSD_OP_CALL:
+          uint64_t last = op.extent.offset;
+
+          for (miter = m.begin(); miter != m.end(); ++miter)
+          {
+            // verify hole?
+            if (cct->_conf->osd_verify_sparse_read_holes && last < miter->first)
+            {
+              bufferlist t;
+              uint64_t len = miter->first - last;
+              r = pgbackend->objects_read_sync(soid, last, len, op.flags, &t);
+              if (!t.is_zero())
+              {
+                osd->clog->error() << coll << " " << soid << " sparse-read found data in hole "	<< last << "~" << len << "\n";
+              }
+            }
+
+            bufferlist tmpbl;
+            r = pgbackend->objects_read_sync(soid, miter->first, miter->second, op.flags, &tmpbl);
+            if (r < 0)
+              break;
+
+            if (r < (int)miter->second) /* this is usually happen when we get extent that exceeds the actual file size */
+            {
+              miter->second = r;
+            }
+
+            total_read += r;
+            dout(10) << "sparse-read " << miter->first << "@" << miter->second << dendl;
+
+            data_bl.claim_append(tmpbl);
+            last = miter->first + r;
+          }
+        
+          if (r < 0)
+          {
+            result = r;
+            break;
+          }
+
+          // verify trailing hole?
+          if (cct->_conf->osd_verify_sparse_read_holes)
+          {
+            uint64_t end = MIN(op.extent.offset + op.extent.length, oi.size);
+            if (last < end)
+            {
+              bufferlist t;
+              uint64_t len = end - last;
+              r = pgbackend->objects_read_sync(soid, last, len, op.flags, &t);
+              if (!t.is_zero())
+              {
+                osd->clog->error() << coll << " " << soid << " sparse-read found data in hole " << last << "~" << len << "\n";
+              }
+            }
+          }
+
+          // Why SPARSE_READ need checksum? In fact, librbd always use sparse-read. 
+          // Maybe at first, there is no much whole objects. With continued use, more and more whole object exist.
+          // So from this point, for spare-read add checksum make sense.
+          if (total_read == oi.size && oi.is_data_digest())
+          {
+            uint32_t crc = data_bl.crc32c(-1);
+            if (oi.data_digest != crc)
+            {
+              osd->clog->error() << info.pgid << std::hex << " full-object read crc 0x" << crc << " != expected 0x" << oi.data_digest << std::dec << " on " << soid;
+              // FIXME fall back to replica or something?
+              result = -EIO;
+              break;
+            }
+          }
+
+          op.extent.length = total_read;
+
+          ::encode(m, osd_op.outdata); // re-encode since it might be modified
+          ::encode_destructively(data_bl, osd_op.outdata);
+
+          dout(10) << " sparse_read got " << total_read << " bytes from object " << soid << dendl;
+        }
+
+        ctx->delta_stats.num_rd_kb += SHIFT_ROUND_UP(op.extent.length, 10);
+        ctx->delta_stats.num_rd++;
+        break;
+
+      case CEPH_OSD_OP_CALL:
       {
-	string cname, mname;
-	bufferlist indata;
-	try {
-	  bp.copy(op.cls.class_len, cname);
-	  bp.copy(op.cls.method_len, mname);
-	  bp.copy(op.cls.indata_len, indata);
-	} catch (buffer::error& e) {
-	  dout(10) << "call unable to decode class + method + indata" << dendl;
-	  dout(30) << "in dump: ";
-	  osd_op.indata.hexdump(*_dout);
-	  *_dout << dendl;
-	  result = -EINVAL;
-	  tracepoint(osd, do_osd_op_pre_call, soid.oid.name.c_str(), soid.snap.val, "???", "???");
-	  break;
-	}
-	tracepoint(osd, do_osd_op_pre_call, soid.oid.name.c_str(), soid.snap.val, cname.c_str(), mname.c_str());
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_CALL" << dendl;
 
-	ClassHandler::ClassData *cls;
-	result = osd->class_handler->open_class(cname, &cls);
-	assert(result == 0);   // init_op_flags() already verified this works.
+        string cname, mname;
+        bufferlist indata;
 
-	ClassHandler::ClassMethod *method = cls->get_method(mname.c_str());
-	if (!method) {
-	  dout(10) << "call method " << cname << "." << mname << " does not exist" << dendl;
-	  result = -EOPNOTSUPP;
-	  break;
-	}
+        try
+        {
+          bp.copy(op.cls.class_len, cname);
+          bp.copy(op.cls.method_len, mname);
+          bp.copy(op.cls.indata_len, indata);
+        }
+        catch(buffer::error& e)
+        {
+          dout(10) << "call unable to decode class + method + indata" << dendl;
+          dout(30) << "in dump: ";
+          osd_op.indata.hexdump(*_dout);
+          *_dout << dendl;
+          result = -EINVAL;
+          tracepoint(osd, do_osd_op_pre_call, soid.oid.name.c_str(), soid.snap.val, "???", "???");
+          break;
+        }
 
-	int flags = method->get_flags();
-	if (flags & CLS_METHOD_WR)
-	  ctx->user_modify = true;
+        tracepoint(osd, do_osd_op_pre_call, soid.oid.name.c_str(), soid.snap.val, cname.c_str(), mname.c_str());
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_CALL, soid=" << soid << " cname=" << cname << " mname=" << mname << dendl;
 
-	bufferlist outdata;
-	dout(10) << "call method " << cname << "." << mname << dendl;
-	int prev_rd = ctx->num_read;
-	int prev_wr = ctx->num_write;
+        ClassHandler::ClassData *cls;
+        result = osd->class_handler->open_class(cname, &cls);
+        assert(result == 0);   // init_op_flags() already verified this works.
 
-  dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, before method->exec, soid=" << soid << " cname=" << cname << " mname=" << mname << " soid=" << soid << " flags=" << flags << dendl;
-	result = method->exec((cls_method_context_t)&ctx, indata, outdata);
-  dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, after method->exec, soid=" << soid << " cname=" << cname << " mname=" << mname << " soid=" << soid << " flags=" << flags << " result=" << result << dendl;
+        ClassHandler::ClassMethod *method = cls->get_method(mname.c_str());
+        if (!method)
+        {
+          dout(10) << "call method " << cname << "." << mname << " does not exist" << dendl;
+          result = -EOPNOTSUPP;
+          break;
+        }
 
-	if (ctx->num_read > prev_rd && !(flags & CLS_METHOD_RD)) {
-	  derr << "method " << cname << "." << mname << " tried to read object but is not marked RD" << dendl;
-	  result = -EIO;
-	  break;
-	}
-	if (ctx->num_write > prev_wr && !(flags & CLS_METHOD_WR)) {
-	  derr << "method " << cname << "." << mname << " tried to update object but is not marked WR" << dendl;
-	  result = -EIO;
-	  break;
-	}
+        int flags = method->get_flags();
+        if (flags & CLS_METHOD_WR)
+        {
+          ctx->user_modify = true;
+        }
 
-	dout(10) << "method called response length=" << outdata.length() << dendl;
-	op.extent.length = outdata.length();
-	osd_op.outdata.claim_append(outdata);
-	dout(30) << "out dump: ";
-	osd_op.outdata.hexdump(*_dout);
-	*_dout << dendl;
+        bufferlist outdata;
+        dout(10) << "call method " << cname << "." << mname << dendl;
+        int prev_rd = ctx->num_read;
+        int prev_wr = ctx->num_write;
+
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, before method->exec, soid=" << soid 
+                 << " cname=" << cname << " mname=" << mname << " soid=" << soid << " flags=" << flags << dendl;
+
+        result = method->exec((cls_method_context_t)&ctx, indata, outdata);
+
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, after method->exec, soid=" << soid 
+                 << " cname=" << cname << " mname=" << mname << " soid=" << soid << " flags=" << flags << " result=" << result << dendl;
+
+        if (ctx->num_read > prev_rd && !(flags & CLS_METHOD_RD))
+        {
+          derr << "method " << cname << "." << mname << " tried to read object but is not marked RD" << dendl;
+          result = -EIO;
+          break;
+        }
+
+        if (ctx->num_write > prev_wr && !(flags & CLS_METHOD_WR))
+        {
+          derr << "method " << cname << "." << mname << " tried to update object but is not marked WR" << dendl;
+          result = -EIO;
+          break;
+        }
+
+        dout(10) << "method called response length=" << outdata.length() << dendl;
+        op.extent.length = outdata.length();
+        osd_op.outdata.claim_append(outdata);
+        dout(30) << "out dump: ";
+        osd_op.outdata.hexdump(*_dout);
+        *_dout << dendl;
       }
       break;
 
-    case CEPH_OSD_OP_STAT:
+      case CEPH_OSD_OP_STAT:
       // note: stat does not require RD
       {
-	tracepoint(osd, do_osd_op_pre_stat, soid.oid.name.c_str(), soid.snap.val);
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_STAT" << dendl;
 
-	if (obs.exists && !oi.is_whiteout()) {
-	  ::encode(oi.size, osd_op.outdata);
-	  ::encode(oi.mtime, osd_op.outdata);
-	  dout(10) << "stat oi has " << oi.size << " " << oi.mtime << dendl;
-	} else {
-	  result = -ENOENT;
-	  dout(10) << "stat oi object does not exist" << dendl;
-	}
+        tracepoint(osd, do_osd_op_pre_stat, soid.oid.name.c_str(), soid.snap.val);
 
-	ctx->delta_stats.num_rd++;
+        if (obs.exists && !oi.is_whiteout())
+        {
+          ::encode(oi.size, osd_op.outdata);
+          ::encode(oi.mtime, osd_op.outdata);
+          dout(10) << "stat oi has " << oi.size << " " << oi.mtime << dendl;
+        }
+        else
+        {
+          result = -ENOENT;
+          dout(10) << "stat oi object does not exist" << dendl;
+        }
+
+        ctx->delta_stats.num_rd++;
       }
       break;
 
-    case CEPH_OSD_OP_ISDIRTY:
-      ++ctx->num_read;
-      {
-	tracepoint(osd, do_osd_op_pre_isdirty, soid.oid.name.c_str(), soid.snap.val);
-	bool is_dirty = obs.oi.is_dirty();
-	::encode(is_dirty, osd_op.outdata);
-	ctx->delta_stats.num_rd++;
-	result = 0;
-      }
-      break;
+      case CEPH_OSD_OP_ISDIRTY:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_ISDIRTY" << dendl;
+        ++ctx->num_read;
+        {
+          tracepoint(osd, do_osd_op_pre_isdirty, soid.oid.name.c_str(), soid.snap.val);
+          bool is_dirty = obs.oi.is_dirty();
+          ::encode(is_dirty, osd_op.outdata);
+          ctx->delta_stats.num_rd++;
+          result = 0;
+        }
+        break;
 
-    case CEPH_OSD_OP_UNDIRTY:
-      ++ctx->num_write;
-      {
-	tracepoint(osd, do_osd_op_pre_undirty, soid.oid.name.c_str(), soid.snap.val);
-	if (oi.is_dirty()) {
-	  ctx->undirty = true;  // see make_writeable()
-	  ctx->modify = true;
-	  ctx->delta_stats.num_wr++;
-	}
-	result = 0;
-      }
-      break;
+      case CEPH_OSD_OP_UNDIRTY:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_UNDIRTY" << dendl;
+        ++ctx->num_write;
+        {
+          tracepoint(osd, do_osd_op_pre_undirty, soid.oid.name.c_str(), soid.snap.val);
+          if (oi.is_dirty())
+          {
+            ctx->undirty = true;  // see make_writeable()
+            ctx->modify = true;
+            ctx->delta_stats.num_wr++;
+          }
+          result = 0;
+        }
+        break;
 
-    case CEPH_OSD_OP_CACHE_TRY_FLUSH:
-      ++ctx->num_write;
-      {
-	tracepoint(osd, do_osd_op_pre_try_flush, soid.oid.name.c_str(), soid.snap.val);
-	if (ctx->lock_type != ObjectContext::RWState::RWNONE) {
-	  dout(10) << "cache-try-flush without SKIPRWLOCKS flag set" << dendl;
-	  result = -EINVAL;
-	  break;
-	}
-	if (pool.info.cache_mode == pg_pool_t::CACHEMODE_NONE) {
-	  result = -EINVAL;
-	  break;
-	}
-	if (!obs.exists) {
-	  result = 0;
-	  break;
-	}
-	if (oi.is_cache_pinned()) {
-	  dout(10) << "cache-try-flush on a pinned object, consider unpin this object first" << dendl;
-	  result = -EPERM;
-	  break;
-	}
-	if (oi.is_dirty()) {
-	  result = start_flush(ctx->op, ctx->obc, false, NULL, boost::none);
-	  if (result == -EINPROGRESS)
-	    result = -EAGAIN;
-	} else {
-	  result = 0;
-	}
-      }
-      break;
+      case CEPH_OSD_OP_CACHE_TRY_FLUSH:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_CACHE_TRY_FLUSH" << dendl;
+        ++ctx->num_write;
+        {
+          tracepoint(osd, do_osd_op_pre_try_flush, soid.oid.name.c_str(), soid.snap.val);
 
-    case CEPH_OSD_OP_CACHE_FLUSH:
-      ++ctx->num_write;
-      {
-	tracepoint(osd, do_osd_op_pre_cache_flush, soid.oid.name.c_str(), soid.snap.val);
-	if (ctx->lock_type == ObjectContext::RWState::RWNONE) {
-	  dout(10) << "cache-flush with SKIPRWLOCKS flag set" << dendl;
-	  result = -EINVAL;
-	  break;
-	}
-	if (pool.info.cache_mode == pg_pool_t::CACHEMODE_NONE) {
-	  result = -EINVAL;
-	  break;
-	}
-	if (!obs.exists) {
-	  result = 0;
-	  break;
-	}
-	if (oi.is_cache_pinned()) {
-	  dout(10) << "cache-flush on a pinned object, consider unpin this object first" << dendl;
-	  result = -EPERM;
-	  break;
-	}
-	hobject_t missing;
-	if (oi.is_dirty()) {
-	  result = start_flush(ctx->op, ctx->obc, true, &missing, boost::none);
-	  if (result == -EINPROGRESS)
-	    result = -EAGAIN;
-	} else {
-	  result = 0;
-	}
-	// Check special return value which has set missing_return
-        if (result == -ENOENT) {
-          dout(10) << __func__ << " CEPH_OSD_OP_CACHE_FLUSH got ENOENT" << dendl;
-	  assert(!missing.is_min());
-	  wait_for_unreadable_object(missing, ctx->op);
-	  // Error code which is used elsewhere when wait_for_unreadable_object() is used
-	  result = -EAGAIN;
-	}
-      }
-      break;
+          if (ctx->lock_type != ObjectContext::RWState::RWNONE)
+          {
+            dout(10) << "cache-try-flush without SKIPRWLOCKS flag set" << dendl;
+            result = -EINVAL;
+            break;
+          }
+
+          if (pool.info.cache_mode == pg_pool_t::CACHEMODE_NONE)
+          {
+            result = -EINVAL;
+            break;
+          }
+
+          if (!obs.exists)
+          {
+            result = 0;
+            break;
+          }
+
+          if (oi.is_cache_pinned())
+          {
+            dout(10) << "cache-try-flush on a pinned object, consider unpin this object first" << dendl;
+            result = -EPERM;
+            break;
+          }
+
+          if (oi.is_dirty())
+          {
+            result = start_flush(ctx->op, ctx->obc, false, NULL, boost::none);
+            if (result == -EINPROGRESS)
+              result = -EAGAIN;
+          }
+          else
+          {
+            result = 0;
+          }
+        }
+        break;
+
+      case CEPH_OSD_OP_CACHE_FLUSH:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_CACHE_FLUSH" << dendl;
+        ++ctx->num_write;
+        {
+          tracepoint(osd, do_osd_op_pre_cache_flush, soid.oid.name.c_str(), soid.snap.val);
+          if (ctx->lock_type == ObjectContext::RWState::RWNONE)
+          {
+            dout(10) << "cache-flush with SKIPRWLOCKS flag set" << dendl;
+            result = -EINVAL;
+            break;
+          }
+
+          if (pool.info.cache_mode == pg_pool_t::CACHEMODE_NONE)
+          {
+            result = -EINVAL;
+            break;
+          }
+
+          if (!obs.exists)
+          {
+            result = 0;
+            break;
+          }
+
+          if (oi.is_cache_pinned())
+          {
+            dout(10) << "cache-flush on a pinned object, consider unpin this object first" << dendl;
+            result = -EPERM;
+            break;
+          }
+
+          hobject_t missing;
+          if (oi.is_dirty())
+          {
+            result = start_flush(ctx->op, ctx->obc, true, &missing, boost::none);
+            if (result == -EINPROGRESS)
+            {
+              result = -EAGAIN;
+            }
+          }
+          else
+          {
+            result = 0;
+          }
+
+          // Check special return value which has set missing_return
+          if (result == -ENOENT)
+          {
+            dout(10) << __func__ << " CEPH_OSD_OP_CACHE_FLUSH got ENOENT" << dendl;
+            assert(!missing.is_min());
+            wait_for_unreadable_object(missing, ctx->op);
+            // Error code which is used elsewhere when wait_for_unreadable_object() is used
+            result = -EAGAIN;
+          }
+        }
+        break;
 
     case CEPH_OSD_OP_CACHE_EVICT:
       ++ctx->num_write;

@@ -367,7 +367,8 @@ static inline int ceph_osd_op_mode_cache(int op)
 }
 static inline int ceph_osd_op_uses_extent(int op)
 {
-	switch(op) {
+	switch(op)
+  {
 	case CEPH_OSD_OP_READ:
 	case CEPH_OSD_OP_MAPEXT:
 	case CEPH_OSD_OP_MASKTRUNC:
