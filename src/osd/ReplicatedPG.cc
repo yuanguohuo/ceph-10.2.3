@@ -4457,7 +4457,8 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
         goto fail;
       }
 
-      dout(10) << " munging ZERO " << op.extent.offset << "~" << op.extent.length << " -> TRUNCATE " << op.extent.offset << " (old size is " << oi.size << ")" << dendl;
+      dout(10) << " munging ZERO " << op.extent.offset << "~" << op.extent.length << " -> TRUNCATE " 
+               << op.extent.offset << " (old size is " << oi.size << ")" << dendl;
       op.op = CEPH_OSD_OP_TRUNCATE;
     }
 
@@ -4488,14 +4489,11 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
                      op.extent.offset, op.extent.length, op.extent.truncate_size, op.extent.truncate_seq);
 
           dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, soid.oid=" << soid.oid
-                                                 << " soid.snap.val=" << soid.snap.val
-                                                 << " size=" << size
-                                                 << " seq=" << seq
-                                                 << " op.extent=[" << op.extent.offset << "," 
-                                                                   << op.extent.length << "," 
-                                                                   << op.extent.truncate_size << "," 
-                                                                   << op.extent.truncate_seq << "]"
-                                                 << dendl;
+                   << " soid.snap.val=" << soid.snap.val
+                   << " size=" << size
+                   << " seq=" << seq
+                   << " op.extent=[" << op.extent.offset << "," << op.extent.length << "," << op.extent.truncate_size << "," << op.extent.truncate_seq << "]" 
+                   << dendl;
 
           bool trimmed_read = false;
 
@@ -4533,6 +4531,9 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
           }
           else if (pool.info.require_rollback())
           {
+            //Yuanguo: why require_rollback() => async ?
+            //Answer: ???
+
             async = true;
             boost::optional<uint32_t> maybe_crc;
 
@@ -5005,749 +5006,974 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
         }
         break;
 
-    case CEPH_OSD_OP_CACHE_EVICT:
-      ++ctx->num_write;
-      {
-	tracepoint(osd, do_osd_op_pre_cache_evict, soid.oid.name.c_str(), soid.snap.val);
-	if (pool.info.cache_mode == pg_pool_t::CACHEMODE_NONE) {
-	  result = -EINVAL;
-	  break;
-	}
-	if (!obs.exists) {
-	  result = 0;
-	  break;
-	}
-	if (oi.is_cache_pinned()) {
-	  dout(10) << "cache-evict on a pinned object, consider unpin this object first" << dendl;
-	  result = -EPERM;
-	  break;
-	}
-	if (oi.is_dirty()) {
-	  result = -EBUSY;
-	  break;
-	}
-	if (!oi.watchers.empty()) {
-	  result = -EBUSY;
-	  break;
-	}
-	if (soid.snap == CEPH_NOSNAP) {
-	  result = _verify_no_head_clones(soid, ssc->snapset);
-	  if (result < 0)
-	    break;
-	}
-	result = _delete_oid(ctx, true);
-	if (result >= 0) {
-	  // mark that this is a cache eviction to avoid triggering normal
-	  // make_writeable() clone or snapdir object creation in finish_ctx()
-	  ctx->cache_evict = true;
-	}
-	osd->logger->inc(l_osd_tier_evict);
-      }
-      break;
+      case CEPH_OSD_OP_CACHE_EVICT:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_CACHE_EVICT" << dendl;
+        ++ctx->num_write;
+        {
+          tracepoint(osd, do_osd_op_pre_cache_evict, soid.oid.name.c_str(), soid.snap.val);
+          if (pool.info.cache_mode == pg_pool_t::CACHEMODE_NONE)
+          {
+            result = -EINVAL;
+            break;
+          }
 
-    case CEPH_OSD_OP_GETXATTR:
-      ++ctx->num_read;
-      {
-	string aname;
-	bp.copy(op.xattr.name_len, aname);
-	tracepoint(osd, do_osd_op_pre_getxattr, soid.oid.name.c_str(), soid.snap.val, aname.c_str());
-	string name = "_" + aname;
-	int r = getattr_maybe_cache(
-	  ctx->obc,
-	  name,
-	  &(osd_op.outdata));
-	if (r >= 0) {
-	  op.xattr.value_len = osd_op.outdata.length();
-	  result = 0;
-	  ctx->delta_stats.num_rd_kb += SHIFT_ROUND_UP(osd_op.outdata.length(), 10);
-	} else
-	  result = r;
+          if (!obs.exists)
+          {
+            result = 0;
+            break;
+          }
 
-	ctx->delta_stats.num_rd++;
-      }
-      break;
+          if (oi.is_cache_pinned())
+          {
+            dout(10) << "cache-evict on a pinned object, consider unpin this object first" << dendl;
+            result = -EPERM;
+            break;
+          }
 
-   case CEPH_OSD_OP_GETXATTRS:
-      ++ctx->num_read;
-      {
-	tracepoint(osd, do_osd_op_pre_getxattrs, soid.oid.name.c_str(), soid.snap.val);
-	map<string, bufferlist> out;
-	result = getattrs_maybe_cache(
-	  ctx->obc,
-	  &out,
-	  true);
+          if (oi.is_dirty())
+          {
+            result = -EBUSY;
+            break;
+          }
+
+          if (!oi.watchers.empty())
+          {
+            result = -EBUSY;
+            break;
+          }
+
+          if (soid.snap == CEPH_NOSNAP)
+          {
+            result = _verify_no_head_clones(soid, ssc->snapset);
+            if (result < 0)
+              break;
+          }
+
+          result = _delete_oid(ctx, true);
+
+          if (result >= 0)
+          {
+            // mark that this is a cache eviction to avoid triggering normal
+            // make_writeable() clone or snapdir object creation in finish_ctx()
+            ctx->cache_evict = true;
+          }
+
+          osd->logger->inc(l_osd_tier_evict);
+        }
+        break;
+
+      case CEPH_OSD_OP_GETXATTR:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_GETXATTR" << dendl;
+        ++ctx->num_read;
+        {
+          string aname;
+          bp.copy(op.xattr.name_len, aname);
+
+          tracepoint(osd, do_osd_op_pre_getxattr, soid.oid.name.c_str(), soid.snap.val, aname.c_str());
+
+          string name = "_" + aname;
+          int r = getattr_maybe_cache(ctx->obc, name, &(osd_op.outdata));
+          if(r >= 0)
+          {
+            op.xattr.value_len = osd_op.outdata.length();
+            result = 0;
+            ctx->delta_stats.num_rd_kb += SHIFT_ROUND_UP(osd_op.outdata.length(), 10);
+          }
+          else
+          {
+            result = r;
+          }
+
+          ctx->delta_stats.num_rd++;
+        }
+        break;
+
+      case CEPH_OSD_OP_GETXATTRS:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_GETXATTRS" << dendl;
+        ++ctx->num_read;
+        {
+          tracepoint(osd, do_osd_op_pre_getxattrs, soid.oid.name.c_str(), soid.snap.val);
+
+          map<string, bufferlist> out;
+          result = getattrs_maybe_cache(ctx->obc, &out, true);
         
-        bufferlist bl;
-        ::encode(out, bl);
-	ctx->delta_stats.num_rd_kb += SHIFT_ROUND_UP(bl.length(), 10);
-        ctx->delta_stats.num_rd++;
-        osd_op.outdata.claim_append(bl);
-      }
-      break;
+          bufferlist bl;
+          ::encode(out, bl);
+
+          ctx->delta_stats.num_rd_kb += SHIFT_ROUND_UP(bl.length(), 10);
+          ctx->delta_stats.num_rd++;
+          osd_op.outdata.claim_append(bl);
+        }
+        break;
       
-    case CEPH_OSD_OP_CMPXATTR:
-    case CEPH_OSD_OP_SRC_CMPXATTR:
-      ++ctx->num_read;
-      {
-	string aname;
-	bp.copy(op.xattr.name_len, aname);
-	tracepoint(osd, do_osd_op_pre_cmpxattr, soid.oid.name.c_str(), soid.snap.val, aname.c_str());
-	string name = "_" + aname;
-	name[op.xattr.name_len + 1] = 0;
+      case CEPH_OSD_OP_CMPXATTR:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_CMPXATTR" << dendl;
+      case CEPH_OSD_OP_SRC_CMPXATTR:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_SRC_CMPXATTR" << dendl;
+        ++ctx->num_read;
+        {
+          string aname;
+          bp.copy(op.xattr.name_len, aname);
+
+          tracepoint(osd, do_osd_op_pre_cmpxattr, soid.oid.name.c_str(), soid.snap.val, aname.c_str());
+
+          string name = "_" + aname;
+          name[op.xattr.name_len + 1] = 0;
 	
-	bufferlist xattr;
-	if (obs.exists) {
-	  if (op.op == CEPH_OSD_OP_CMPXATTR)
-	    result = getattr_maybe_cache(
-		ctx->obc,
-		name,
-		&xattr);
-	  else
-	    result = getattr_maybe_cache(
-		src_obc,
-		name,
-		&xattr);
-	  if (result < 0 && result != -ENODATA)
-	    break;
+          bufferlist xattr;
+          if (obs.exists)
+          {
+            if (op.op == CEPH_OSD_OP_CMPXATTR)
+            {
+              result = getattr_maybe_cache(ctx->obc, name, &xattr);
+            }
+            else
+            {
+              result = getattr_maybe_cache(src_obc, name, &xattr);
+            }
 
-	  ctx->delta_stats.num_rd++;
-	  ctx->delta_stats.num_rd_kb += SHIFT_ROUND_UP(xattr.length(), 10);
-	}
+            if (result < 0 && result != -ENODATA)
+              break;
 
-	switch (op.xattr.cmp_mode) {
-	case CEPH_OSD_CMPXATTR_MODE_STRING:
-	  {
-	    string val;
-	    bp.copy(op.xattr.value_len, val);
-	    val[op.xattr.value_len] = 0;
-	    dout(10) << "CEPH_OSD_OP_CMPXATTR name=" << name << " val=" << val
-		     << " op=" << (int)op.xattr.cmp_op << " mode=" << (int)op.xattr.cmp_mode << dendl;
-	    result = do_xattr_cmp_str(op.xattr.cmp_op, val, xattr);
-	  }
-	  break;
+            ctx->delta_stats.num_rd++;
+            ctx->delta_stats.num_rd_kb += SHIFT_ROUND_UP(xattr.length(), 10);
+          }
 
-        case CEPH_OSD_CMPXATTR_MODE_U64:
-	  {
-	    uint64_t u64val;
-	    try {
-	      ::decode(u64val, bp);
-	    }
-	    catch (buffer::error& e) {
-	      result = -EINVAL;
-	      goto fail;
-	    }
-	    dout(10) << "CEPH_OSD_OP_CMPXATTR name=" << name << " val=" << u64val
-		     << " op=" << (int)op.xattr.cmp_op << " mode=" << (int)op.xattr.cmp_mode << dendl;
-	    result = do_xattr_cmp_u64(op.xattr.cmp_op, u64val, xattr);
-	  }
-	  break;
+          switch (op.xattr.cmp_mode)
+          {
+            case CEPH_OSD_CMPXATTR_MODE_STRING:
+              {
+                string val;
+                bp.copy(op.xattr.value_len, val);
+                val[op.xattr.value_len] = 0;
+                dout(10) << "CEPH_OSD_OP_CMPXATTR name=" << name << " val=" << val
+                         << " op=" << (int)op.xattr.cmp_op << " mode=" << (int)op.xattr.cmp_mode << dendl;
+                result = do_xattr_cmp_str(op.xattr.cmp_op, val, xattr);
+              }
+              break;
 
-	default:
-	  dout(10) << "bad cmp mode " << (int)op.xattr.cmp_mode << dendl;
-	  result = -EINVAL;
-	}
+            case CEPH_OSD_CMPXATTR_MODE_U64:
+              {
+                uint64_t u64val;
+                try
+                {
+                  ::decode(u64val, bp);
+                }
+                catch (buffer::error& e)
+                {
+                  result = -EINVAL;
+                  goto fail;
+                }
 
-	if (!result) {
-	  dout(10) << "comparison returned false" << dendl;
-	  result = -ECANCELED;
-	  break;
-	}
-	if (result < 0) {
-	  dout(10) << "comparison returned " << result << " " << cpp_strerror(-result) << dendl;
-	  break;
-	}
+                dout(10) << "CEPH_OSD_OP_CMPXATTR name=" << name << " val=" << u64val
+                         << " op=" << (int)op.xattr.cmp_op << " mode=" << (int)op.xattr.cmp_mode << dendl;
+                result = do_xattr_cmp_u64(op.xattr.cmp_op, u64val, xattr);
+              }
+              break;
 
-	dout(10) << "comparison returned true" << dendl;
-      }
-      break;
+            default:
+              dout(10) << "bad cmp mode " << (int)op.xattr.cmp_mode << dendl;
+              result = -EINVAL;
+          }
 
-    case CEPH_OSD_OP_ASSERT_VER:
-      ++ctx->num_read;
-      {
-	uint64_t ver = op.assert_ver.ver;
-	tracepoint(osd, do_osd_op_pre_assert_ver, soid.oid.name.c_str(), soid.snap.val, ver);
-	if (!ver)
-	  result = -EINVAL;
-        else if (ver < oi.user_version)
-	  result = -ERANGE;
-	else if (ver > oi.user_version)
-	  result = -EOVERFLOW;
-      }
-      break;
-
-    case CEPH_OSD_OP_LIST_WATCHERS:
-      ++ctx->num_read;
-      {
-	tracepoint(osd, do_osd_op_pre_list_watchers, soid.oid.name.c_str(), soid.snap.val);
-        obj_list_watch_response_t resp;
-
-        map<pair<uint64_t, entity_name_t>, watch_info_t>::const_iterator oi_iter;
-        for (oi_iter = oi.watchers.begin(); oi_iter != oi.watchers.end();
-                                       ++oi_iter) {
-          dout(20) << "key cookie=" << oi_iter->first.first
-               << " entity=" << oi_iter->first.second << " "
-               << oi_iter->second << dendl;
-          assert(oi_iter->first.first == oi_iter->second.cookie);
-          assert(oi_iter->first.second.is_client());
-
-          watch_item_t wi(oi_iter->first.second, oi_iter->second.cookie,
-		 oi_iter->second.timeout_seconds, oi_iter->second.addr);
-          resp.entries.push_back(wi);
-        }
-
-        resp.encode(osd_op.outdata);
-        result = 0;
-
-        ctx->delta_stats.num_rd++;
-        break;
-      }
-
-    case CEPH_OSD_OP_LIST_SNAPS:
-      ++ctx->num_read;
-      {
-	tracepoint(osd, do_osd_op_pre_list_snaps, soid.oid.name.c_str(), soid.snap.val);
-        obj_list_snap_response_t resp;
-
-        if (!ssc) {
-	  ssc = ctx->obc->ssc = get_snapset_context(soid, false);
-        }
-        assert(ssc);
-
-        int clonecount = ssc->snapset.clones.size();
-        if (ssc->snapset.head_exists)
-          clonecount++;
-        resp.clones.reserve(clonecount);
-        for (vector<snapid_t>::const_iterator clone_iter = ssc->snapset.clones.begin();
-	     clone_iter != ssc->snapset.clones.end(); ++clone_iter) {
-          clone_info ci;
-          ci.cloneid = *clone_iter;
-
-	  hobject_t clone_oid = soid;
-	  clone_oid.snap = *clone_iter;
-	  ObjectContextRef clone_obc = ctx->src_obc[clone_oid];
-          assert(clone_obc);
-	  for (vector<snapid_t>::reverse_iterator p = clone_obc->obs.oi.snaps.rbegin();
-	       p != clone_obc->obs.oi.snaps.rend();
-	       ++p) {
-	    ci.snaps.push_back(*p);
-	  }
-
-          dout(20) << " clone " << *clone_iter << " snaps " << ci.snaps << dendl;
-
-          map<snapid_t, interval_set<uint64_t> >::const_iterator coi;
-          coi = ssc->snapset.clone_overlap.find(ci.cloneid);
-          if (coi == ssc->snapset.clone_overlap.end()) {
-            osd->clog->error() << "osd." << osd->whoami << ": inconsistent clone_overlap found for oid "
-			      << soid << " clone " << *clone_iter;
-            result = -EINVAL;
+          if (!result)
+          {
+            dout(10) << "comparison returned false" << dendl;
+            result = -ECANCELED;
             break;
           }
-          const interval_set<uint64_t> &o = coi->second;
-          ci.overlap.reserve(o.num_intervals());
-          for (interval_set<uint64_t>::const_iterator r = o.begin();
-               r != o.end(); ++r) {
-            ci.overlap.push_back(pair<uint64_t,uint64_t>(r.get_start(), r.get_len()));
-          }
 
-          map<snapid_t, uint64_t>::const_iterator si;
-          si = ssc->snapset.clone_size.find(ci.cloneid);
-          if (si == ssc->snapset.clone_size.end()) {
-            osd->clog->error() << "osd." << osd->whoami << ": inconsistent clone_size found for oid "
-			      << soid << " clone " << *clone_iter;
-            result = -EINVAL;
+          if (result < 0)
+          {
+            dout(10) << "comparison returned " << result << " " << cpp_strerror(-result) << dendl;
             break;
           }
-          ci.size = si->second;
 
-          resp.clones.push_back(ci);
+          dout(10) << "comparison returned true" << dendl;
         }
-	if (result < 0) {
-	  break;
-	}	  
-        if (ssc->snapset.head_exists &&
-	    !ctx->obc->obs.oi.is_whiteout()) {
-          assert(obs.exists);
-          clone_info ci;
-          ci.cloneid = CEPH_NOSNAP;
-
-          //Size for HEAD is oi.size
-          ci.size = oi.size;
-
-          resp.clones.push_back(ci);
-        }
-	resp.seq = ssc->snapset.seq;
-
-        resp.encode(osd_op.outdata);
-        result = 0;
-
-        ctx->delta_stats.num_rd++;
         break;
-      }
 
-    case CEPH_OSD_OP_ASSERT_SRC_VERSION:
-      ++ctx->num_read;
-      {
-	uint64_t ver = op.assert_ver.ver;
-	tracepoint(osd, do_osd_op_pre_assert_src_version, soid.oid.name.c_str(), soid.snap.val, ver);
-	if (!ver)
-	  result = -EINVAL;
-        else if (ver < src_obc->obs.oi.user_version)
-	  result = -ERANGE;
-	else if (ver > src_obc->obs.oi.user_version)
-	  result = -EOVERFLOW;
-	break;
-      }
+      case CEPH_OSD_OP_ASSERT_VER:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_ASSERT_VER" << dendl;
+        ++ctx->num_read;
+        {
+          uint64_t ver = op.assert_ver.ver;
+          tracepoint(osd, do_osd_op_pre_assert_ver, soid.oid.name.c_str(), soid.snap.val, ver);
+          if (!ver)
+            result = -EINVAL;
+          else if (ver < oi.user_version)
+            result = -ERANGE;
+          else if (ver > oi.user_version)
+            result = -EOVERFLOW;
+        }
+        break;
 
-   case CEPH_OSD_OP_NOTIFY:
-      ++ctx->num_read;
-      {
-	uint32_t timeout;
-        bufferlist bl;
+      case CEPH_OSD_OP_LIST_WATCHERS:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, " << dendl;
+        ++ctx->num_read;
+        {
+          tracepoint(osd, do_osd_op_pre_list_watchers, soid.oid.name.c_str(), soid.snap.val);
+          obj_list_watch_response_t resp;
 
-	try {
-	  uint32_t ver; // obsolete
-          ::decode(ver, bp);
-	  ::decode(timeout, bp);
-          ::decode(bl, bp);
-	} catch (const buffer::error &e) {
-	  timeout = 0;
-	}
-	tracepoint(osd, do_osd_op_pre_notify, soid.oid.name.c_str(), soid.snap.val, timeout);
-	if (!timeout)
-	  timeout = cct->_conf->osd_default_notify_timeout;
+          map<pair<uint64_t, entity_name_t>, watch_info_t>::const_iterator oi_iter;
+          for (oi_iter = oi.watchers.begin(); oi_iter != oi.watchers.end(); ++oi_iter)
+          {
+            dout(20) << "key cookie=" << oi_iter->first.first << " entity=" << oi_iter->first.second << " " << oi_iter->second << dendl;
 
-	notify_info_t n;
-	n.timeout = timeout;
-	n.notify_id = osd->get_next_id(get_osdmap()->get_epoch());
-	n.cookie = op.watch.cookie;
-        n.bl = bl;
-	ctx->notifies.push_back(n);
+            assert(oi_iter->first.first == oi_iter->second.cookie);
+            assert(oi_iter->first.second.is_client());
 
-	// return our unique notify id to the client
-	::encode(n.notify_id, osd_op.outdata);
-      }
-      break;
+            watch_item_t wi(oi_iter->first.second, oi_iter->second.cookie, oi_iter->second.timeout_seconds, oi_iter->second.addr);
+            resp.entries.push_back(wi);
+          }
 
-    case CEPH_OSD_OP_NOTIFY_ACK:
-      ++ctx->num_read;
-      {
-	try {
-	  uint64_t notify_id = 0;
-	  uint64_t watch_cookie = 0;
-	  ::decode(notify_id, bp);
-	  ::decode(watch_cookie, bp);
-	  bufferlist reply_bl;
-	  if (!bp.end()) {
-	    ::decode(reply_bl, bp);
-	  }
-	  tracepoint(osd, do_osd_op_pre_notify_ack, soid.oid.name.c_str(), soid.snap.val, notify_id, watch_cookie, "Y");
-	  OpContext::NotifyAck ack(notify_id, watch_cookie, reply_bl);
-	  ctx->notify_acks.push_back(ack);
-	} catch (const buffer::error &e) {
-	  tracepoint(osd, do_osd_op_pre_notify_ack, soid.oid.name.c_str(), soid.snap.val, op.watch.cookie, 0, "N");
-	  OpContext::NotifyAck ack(
-	    // op.watch.cookie is actually the notify_id for historical reasons
-	    op.watch.cookie
-	    );
-	  ctx->notify_acks.push_back(ack);
-	}
-      }
-      break;
+          resp.encode(osd_op.outdata);
+          result = 0;
 
-    case CEPH_OSD_OP_SETALLOCHINT:
-      ++ctx->num_write;
-      {
-	tracepoint(osd, do_osd_op_pre_setallochint, soid.oid.name.c_str(), soid.snap.val, op.alloc_hint.expected_object_size, op.alloc_hint.expected_write_size);
-	if (maybe_create_new_object(ctx)) {
-          ctx->mod_desc.create();
-          t->touch(soid);
-	}
-        t->set_alloc_hint(soid, op.alloc_hint.expected_object_size,
-                          op.alloc_hint.expected_write_size);
-        ctx->delta_stats.num_wr++;
-        result = 0;
-      }
-      break;
+          ctx->delta_stats.num_rd++;
+          break;
+        }
 
+      case CEPH_OSD_OP_LIST_SNAPS:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, " << dendl;
+        ++ctx->num_read;
+        {
+          tracepoint(osd, do_osd_op_pre_list_snaps, soid.oid.name.c_str(), soid.snap.val);
+          obj_list_snap_response_t resp;
+
+          if (!ssc)
+          {
+            ssc = ctx->obc->ssc = get_snapset_context(soid, false);
+          }
+          assert(ssc);
+
+          int clonecount = ssc->snapset.clones.size();
+          if (ssc->snapset.head_exists)
+            clonecount++;
+          resp.clones.reserve(clonecount);
+
+          for (vector<snapid_t>::const_iterator clone_iter = ssc->snapset.clones.begin(); clone_iter != ssc->snapset.clones.end(); ++clone_iter)
+          {
+            clone_info ci;
+            ci.cloneid = *clone_iter;
+
+            hobject_t clone_oid = soid;
+            clone_oid.snap = *clone_iter;
+            ObjectContextRef clone_obc = ctx->src_obc[clone_oid];
+            assert(clone_obc);
+            for (vector<snapid_t>::reverse_iterator p = clone_obc->obs.oi.snaps.rbegin(); p != clone_obc->obs.oi.snaps.rend(); ++p)
+            {
+              ci.snaps.push_back(*p);
+            }
+
+            dout(20) << " clone " << *clone_iter << " snaps " << ci.snaps << dendl;
+
+            map<snapid_t, interval_set<uint64_t> >::const_iterator coi;
+            coi = ssc->snapset.clone_overlap.find(ci.cloneid);
+
+            if (coi == ssc->snapset.clone_overlap.end())
+            {
+              osd->clog->error() << "osd." << osd->whoami << ": inconsistent clone_overlap found for oid "
+                                 << soid << " clone " << *clone_iter;
+              result = -EINVAL;
+              break;
+            }
+
+            const interval_set<uint64_t> &o = coi->second;
+            ci.overlap.reserve(o.num_intervals());
+            for (interval_set<uint64_t>::const_iterator r = o.begin(); r != o.end(); ++r)
+            {
+              ci.overlap.push_back(pair<uint64_t,uint64_t>(r.get_start(), r.get_len()));
+            }
+
+            map<snapid_t, uint64_t>::const_iterator si;
+            si = ssc->snapset.clone_size.find(ci.cloneid);
+            if (si == ssc->snapset.clone_size.end())
+            {
+              osd->clog->error() << "osd." << osd->whoami << ": inconsistent clone_size found for oid "
+                                 << soid << " clone " << *clone_iter;
+              result = -EINVAL;
+              break;
+            }
+            ci.size = si->second;
+
+            resp.clones.push_back(ci);
+          }
+
+          if (result < 0)
+          {
+            break;
+          }	  
+
+          if (ssc->snapset.head_exists && !ctx->obc->obs.oi.is_whiteout())
+          {
+            assert(obs.exists);
+            clone_info ci;
+            ci.cloneid = CEPH_NOSNAP;
+
+            //Size for HEAD is oi.size
+            ci.size = oi.size;
+
+            resp.clones.push_back(ci);
+          }
+
+          resp.seq = ssc->snapset.seq;
+
+          resp.encode(osd_op.outdata);
+          result = 0;
+
+          ctx->delta_stats.num_rd++;
+          break;
+        }
+
+      case CEPH_OSD_OP_ASSERT_SRC_VERSION:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_ASSERT_SRC_VERSION" << dendl;
+
+        ++ctx->num_read;
+        {
+          uint64_t ver = op.assert_ver.ver;
+          tracepoint(osd, do_osd_op_pre_assert_src_version, soid.oid.name.c_str(), soid.snap.val, ver);
+
+          if (!ver)
+            result = -EINVAL;
+          else if (ver < src_obc->obs.oi.user_version)
+            result = -ERANGE;
+          else if (ver > src_obc->obs.oi.user_version)
+            result = -EOVERFLOW;
+          break;
+        }
+
+      case CEPH_OSD_OP_NOTIFY:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_NOTIFY" << dendl;
+
+        ++ctx->num_read;
+        {
+          uint32_t timeout;
+          bufferlist bl;
+
+          try
+          {
+            uint32_t ver; // obsolete
+            ::decode(ver, bp);
+            ::decode(timeout, bp);
+            ::decode(bl, bp);
+          }
+          catch (const buffer::error &e)
+          {
+            timeout = 0;
+          }
+
+          tracepoint(osd, do_osd_op_pre_notify, soid.oid.name.c_str(), soid.snap.val, timeout);
+
+          if (!timeout)
+          {
+            timeout = cct->_conf->osd_default_notify_timeout;
+          }
+
+          notify_info_t n;
+          n.timeout = timeout;
+          n.notify_id = osd->get_next_id(get_osdmap()->get_epoch());
+          n.cookie = op.watch.cookie;
+          n.bl = bl;
+          ctx->notifies.push_back(n);
+
+          // return our unique notify id to the client
+          ::encode(n.notify_id, osd_op.outdata);
+        }
+        break;
+
+      case CEPH_OSD_OP_NOTIFY_ACK:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_NOTIFY_ACK" << dendl;
+        ++ctx->num_read;
+        {
+          try
+          {
+            uint64_t notify_id = 0;
+            uint64_t watch_cookie = 0;
+            ::decode(notify_id, bp);
+            ::decode(watch_cookie, bp);
+
+            bufferlist reply_bl;
+            if (!bp.end())
+            {
+              ::decode(reply_bl, bp);
+            }
+
+            tracepoint(osd, do_osd_op_pre_notify_ack, soid.oid.name.c_str(), soid.snap.val, notify_id, watch_cookie, "Y");
+
+            OpContext::NotifyAck ack(notify_id, watch_cookie, reply_bl);
+            ctx->notify_acks.push_back(ack);
+          }
+          catch (const buffer::error &e)
+          {
+            tracepoint(osd, do_osd_op_pre_notify_ack, soid.oid.name.c_str(), soid.snap.val, op.watch.cookie, 0, "N");
+
+            OpContext::NotifyAck ack(
+                // op.watch.cookie is actually the notify_id for historical reasons
+                op.watch.cookie);
+
+            ctx->notify_acks.push_back(ack);
+          }
+        }
+        break;
+
+      case CEPH_OSD_OP_SETALLOCHINT:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_SETALLOCHINT" << dendl;
+        ++ctx->num_write;
+        {
+          tracepoint(osd, do_osd_op_pre_setallochint, soid.oid.name.c_str(), soid.snap.val, 
+                     op.alloc_hint.expected_object_size, op.alloc_hint.expected_write_size);
+
+          if (maybe_create_new_object(ctx))
+          {
+            ctx->mod_desc.create();
+            t->touch(soid);
+          }
+
+          t->set_alloc_hint(soid, op.alloc_hint.expected_object_size, op.alloc_hint.expected_write_size);
+          ctx->delta_stats.num_wr++;
+          result = 0;
+        }
+        break;
 
       // --- WRITES ---
 
       // -- object data --
 
-    case CEPH_OSD_OP_WRITE:
-      ++ctx->num_write;
-      { // write
-        __u32 seq = oi.truncate_seq;
-	tracepoint(osd, do_osd_op_pre_write, soid.oid.name.c_str(), soid.snap.val, oi.size, seq, op.extent.offset, op.extent.length, op.extent.truncate_size, op.extent.truncate_seq);
-	if (op.extent.length != osd_op.indata.length()) {
-	  result = -EINVAL;
-	  break;
-	}
+      case CEPH_OSD_OP_WRITE:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_WRITE" << dendl;
+        ++ctx->num_write;
+        // write
+        { 
+          //Yuanguo: the seq (op.extent.truncate_seq) of "the last truncate-op" ?
+          __u32 seq = oi.truncate_seq;
 
-	if (pool.info.has_flag(pg_pool_t::FLAG_WRITE_FADVISE_DONTNEED))
-	  op.flags = op.flags | CEPH_OSD_OP_FLAG_FADVISE_DONTNEED;
+          tracepoint(osd, do_osd_op_pre_write, soid.oid.name.c_str(), soid.snap.val, 
+              oi.size, seq, op.extent.offset, op.extent.length, op.extent.truncate_size, op.extent.truncate_seq);
+          dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, soid.oid=" << soid.oid 
+                   << " soid.snap.val=" << soid.snap.val
+                   << " oi.size=" << oi.size
+                   << " seq=" << seq
+                   << " op.extent=[" << op.extent.offset << "," << op.extent.length << "," << op.extent.truncate_size << "," << op.extent.truncate_seq << "]" 
+                   << dendl;
 
-	if (pool.info.requires_aligned_append() &&
-	    (op.extent.offset % pool.info.required_alignment() != 0)) {
-	  result = -EOPNOTSUPP;
-	  break;
-	}
-
-	if (!obs.exists) {
-	  if (pool.info.require_rollback() && op.extent.offset) {
-	    result = -EOPNOTSUPP;
-	    break;
-	  }
-	  ctx->mod_desc.create();
-	} else if (op.extent.offset == oi.size) {
-	  ctx->mod_desc.append(oi.size);
-	} else {
-	  ctx->mod_desc.mark_unrollbackable();
-	  if (pool.info.require_rollback()) {
-	    result = -EOPNOTSUPP;
-	    break;
-	  }
-	}
-
-        if (seq && (seq > op.extent.truncate_seq) &&
-            (op.extent.offset + op.extent.length > oi.size)) {
-	  // old write, arrived after trimtrunc
-	  op.extent.length = (op.extent.offset > oi.size ? 0 : oi.size - op.extent.offset);
-	  dout(10) << " old truncate_seq " << op.extent.truncate_seq << " < current " << seq
-		   << ", adjusting write length to " << op.extent.length << dendl;
-	  bufferlist t;
-	  t.substr_of(osd_op.indata, 0, op.extent.length);
-	  osd_op.indata.swap(t);
-        }
-	if (op.extent.truncate_seq > seq) {
-	  // write arrives before trimtrunc
-	  if (obs.exists && !oi.is_whiteout()) {
-	    dout(10) << " truncate_seq " << op.extent.truncate_seq << " > current " << seq
-		     << ", truncating to " << op.extent.truncate_size << dendl;
-	    t->truncate(soid, op.extent.truncate_size);
-	    oi.truncate_seq = op.extent.truncate_seq;
-	    oi.truncate_size = op.extent.truncate_size;
-	    if (op.extent.truncate_size != oi.size) {
-	      ctx->delta_stats.num_bytes -= oi.size;
-	      ctx->delta_stats.num_bytes += op.extent.truncate_size;
-	      oi.size = op.extent.truncate_size;
-	    }
-	  } else {
-	    dout(10) << " truncate_seq " << op.extent.truncate_seq << " > current " << seq
-		     << ", but object is new" << dendl;
-	    oi.truncate_seq = op.extent.truncate_seq;
-	    oi.truncate_size = op.extent.truncate_size;
-	  }
-	}
-	result = check_offset_and_length(op.extent.offset, op.extent.length, cct->_conf->osd_max_object_size);
-	if (result < 0)
-	  break;
-	if (pool.info.require_rollback()) {
-	  t->append(soid, op.extent.offset, op.extent.length, osd_op.indata, op.flags);
-	} else {
-	  t->write(soid, op.extent.offset, op.extent.length, osd_op.indata, op.flags);
-	}
-
-	maybe_create_new_object(ctx);
-	if (op.extent.offset == 0 && op.extent.length >= oi.size)
-	  obs.oi.set_data_digest(osd_op.indata.crc32c(-1));
-	else if (op.extent.offset == oi.size && obs.oi.is_data_digest())
-	  obs.oi.set_data_digest(osd_op.indata.crc32c(obs.oi.data_digest));
-	else
-	  obs.oi.clear_data_digest();
-	write_update_size_and_usage(ctx->delta_stats, oi, ctx->modified_ranges,
-				    op.extent.offset, op.extent.length, true);
-
-      }
-      break;
-      
-    case CEPH_OSD_OP_WRITEFULL:
-      ++ctx->num_write;
-      { // write full object
-	tracepoint(osd, do_osd_op_pre_writefull, soid.oid.name.c_str(), soid.snap.val, oi.size, 0, op.extent.length);
-
-	if (op.extent.length != osd_op.indata.length()) {
-	  result = -EINVAL;
-	  break;
-	}
-	result = check_offset_and_length(0, op.extent.length, cct->_conf->osd_max_object_size);
-	if (result < 0)
-	  break;
-
-	if (pool.info.has_flag(pg_pool_t::FLAG_WRITE_FADVISE_DONTNEED))
-	  op.flags = op.flags | CEPH_OSD_OP_FLAG_FADVISE_DONTNEED;
-
-	if (pool.info.require_rollback()) {
-	  if (obs.exists) {
-	    if (ctx->mod_desc.rmobject(ctx->at_version.version)) {
-	      t->stash(soid, ctx->at_version.version);
-	    } else {
-	      t->remove(soid);
-	    }
-	  }
-	  ctx->mod_desc.create();
-	  t->append(soid, 0, op.extent.length, osd_op.indata, op.flags);
-	  if (obs.exists) {
-	    map<string, bufferlist> to_set = ctx->obc->attr_cache;
-	    map<string, boost::optional<bufferlist> > &overlay =
-	      ctx->pending_attrs[ctx->obc];
-	    for (map<string, boost::optional<bufferlist> >::iterator i =
-		   overlay.begin();
-		 i != overlay.end();
-		 ++i) {
-	      if (i->second) {
-		to_set[i->first] = *(i->second);
-	      } else {
-		to_set.erase(i->first);
-	      }
-	    }
-	    t->setattrs(soid, to_set);
-	  }
-	} else {
-	  ctx->mod_desc.mark_unrollbackable();
-	  t->write(soid, 0, op.extent.length, osd_op.indata, op.flags);
-	  if (obs.exists && op.extent.length < oi.size) {
-	    t->truncate(soid, op.extent.length);
-	  }
-	}
-	maybe_create_new_object(ctx);
-	obs.oi.set_data_digest(osd_op.indata.crc32c(-1));
-
-	write_update_size_and_usage(ctx->delta_stats, oi, ctx->modified_ranges,
-	    0, op.extent.length, true, op.extent.length != oi.size ? true : false);
-      }
-      break;
-
-    case CEPH_OSD_OP_ROLLBACK :
-      ++ctx->num_write;
-      tracepoint(osd, do_osd_op_pre_rollback, soid.oid.name.c_str(), soid.snap.val);
-      result = _rollback_to(ctx, op);
-      break;
-
-    case CEPH_OSD_OP_ZERO:
-      tracepoint(osd, do_osd_op_pre_zero, soid.oid.name.c_str(), soid.snap.val, op.extent.offset, op.extent.length);
-      if (pool.info.require_rollback()) {
-	result = -EOPNOTSUPP;
-	break;
-      }
-      ++ctx->num_write;
-      { // zero
-	result = check_offset_and_length(op.extent.offset, op.extent.length, cct->_conf->osd_max_object_size);
-	if (result < 0)
-	  break;
-	assert(op.extent.length);
-	if (obs.exists && !oi.is_whiteout()) {
-	  ctx->mod_desc.mark_unrollbackable();
-	  t->zero(soid, op.extent.offset, op.extent.length);
-	  interval_set<uint64_t> ch;
-	  ch.insert(op.extent.offset, op.extent.length);
-	  ctx->modified_ranges.union_of(ch);
-	  ctx->delta_stats.num_wr++;
-	  oi.clear_data_digest();
-	} else {
-	  // no-op
-	}
-      }
-      break;
-    case CEPH_OSD_OP_CREATE:
-      ++ctx->num_write;
-      {
-	tracepoint(osd, do_osd_op_pre_create, soid.oid.name.c_str(), soid.snap.val);
-        int flags = le32_to_cpu(op.flags);
-	if (obs.exists && !oi.is_whiteout() &&
-	    (flags & CEPH_OSD_OP_FLAG_EXCL)) {
-          result = -EEXIST; /* this is an exclusive create */
-	} else {
-	  if (osd_op.indata.length()) {
-	    bufferlist::iterator p = osd_op.indata.begin();
-	    string category;
-	    try {
-	      ::decode(category, p);
-	    }
-	    catch (buffer::error& e) {
-	      result = -EINVAL;
-	      goto fail;
-	    }
-	    // category is no longer implemented.
-	  }
-          if (result >= 0) {
-	    bool is_whiteout = obs.exists && oi.is_whiteout();
-	    if (maybe_create_new_object(ctx)) {
-	      ctx->mod_desc.create();
-	      t->touch(soid);
-	    } else if (is_whiteout) {
-	      // to change whiteout to non-whiteout, it need an op to update xattr
-	      t->nop();
-	    }
+          if (op.extent.length != osd_op.indata.length())
+          {
+            result = -EINVAL;
+            break;
           }
-	}
-      }
-      break;
 
-    case CEPH_OSD_OP_TRIMTRUNC:
-      op.extent.offset = op.extent.truncate_size;
-      // falling through
+          if (pool.info.has_flag(pg_pool_t::FLAG_WRITE_FADVISE_DONTNEED))
+          {
+            op.flags = op.flags | CEPH_OSD_OP_FLAG_FADVISE_DONTNEED;
+          }
 
-    case CEPH_OSD_OP_TRUNCATE:
-      tracepoint(osd, do_osd_op_pre_truncate, soid.oid.name.c_str(), soid.snap.val, oi.size, oi.truncate_seq, op.extent.offset, op.extent.length, op.extent.truncate_size, op.extent.truncate_seq);
-      if (pool.info.require_rollback()) {
-	result = -EOPNOTSUPP;
-	break;
-      }
-      ++ctx->num_write;
-      ctx->mod_desc.mark_unrollbackable();
-      {
-	// truncate
-	if (!obs.exists || oi.is_whiteout()) {
-	  dout(10) << " object dne, truncate is a no-op" << dendl;
-	  break;
-	}
+          if (pool.info.requires_aligned_append() && (op.extent.offset % pool.info.required_alignment() != 0))
+          {
+            result = -EOPNOTSUPP;
+            break;
+          }
 
-	if (op.extent.offset > cct->_conf->osd_max_object_size) {
-	  result = -EFBIG;
-	  break;
-	}
+          if (!obs.exists)
+          {
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, should create" << dendl;
+            if (pool.info.require_rollback() && op.extent.offset)
+            {
+              dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, not support" << dendl;
+              result = -EOPNOTSUPP;
+              break;
+            }
 
-	if (op.extent.truncate_seq) {
-	  assert(op.extent.offset == op.extent.truncate_size);
-	  if (op.extent.truncate_seq <= oi.truncate_seq) {
-	    dout(10) << " truncate seq " << op.extent.truncate_seq << " <= current " << oi.truncate_seq
-		     << ", no-op" << dendl;
-	    break; // old
-	  }
-	  dout(10) << " truncate seq " << op.extent.truncate_seq << " > current " << oi.truncate_seq
-		   << ", truncating" << dendl;
-	  oi.truncate_seq = op.extent.truncate_seq;
-	  oi.truncate_size = op.extent.truncate_size;
-	}
+            ctx->mod_desc.create();
+          }
+          else if(op.extent.offset == oi.size)
+          {
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, should append" << dendl;
+            ctx->mod_desc.append(oi.size);
+          }
+          else
+          {
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, should write" << dendl;
+            ctx->mod_desc.mark_unrollbackable();
+            if (pool.info.require_rollback())
+            {
+              result = -EOPNOTSUPP;
+              break;
+            }
+          }
 
-	t->truncate(soid, op.extent.offset);
-	if (oi.size > op.extent.offset) {
-	  interval_set<uint64_t> trim;
-	  trim.insert(op.extent.offset, oi.size-op.extent.offset);
-	  ctx->modified_ranges.union_of(trim);
-	}
-	if (op.extent.offset != oi.size) {
-	  ctx->delta_stats.num_bytes -= oi.size;
-	  ctx->delta_stats.num_bytes += op.extent.offset;
-	  oi.size = op.extent.offset;
-	}
-	ctx->delta_stats.num_wr++;
-	// do no set exists, or we will break above DELETE -> TRUNCATE munging.
+          //Yuanguo: this case ???
+          //         objA size is 200,
+          //         write-op seq 16 (current op), write range 80~120, length=40
+          //         truncate-op seq 17, truncate objA size to 100
+          //         but truncate-op arrived before the write-op;
+          //         then: adjust length = 100-80 = 20
+          if (seq && (seq > op.extent.truncate_seq) && (op.extent.offset + op.extent.length > oi.size))
+          {
+            // old write, arrived after trimtrunc
+            op.extent.length = (op.extent.offset > oi.size ? 0 : oi.size - op.extent.offset);
 
-	oi.clear_data_digest();
-      }
-      break;
-    
-    case CEPH_OSD_OP_DELETE:
-      ++ctx->num_write;
-      tracepoint(osd, do_osd_op_pre_delete, soid.oid.name.c_str(), soid.snap.val);
-      result = _delete_oid(ctx, ctx->ignore_cache);
-      break;
+            dout(10) << " old truncate_seq " << op.extent.truncate_seq << " < current " << seq
+                     << ", adjusting write length to " << op.extent.length << dendl;
 
-    case CEPH_OSD_OP_CLONERANGE:
-      tracepoint(osd, do_osd_op_pre_clonerange, soid.oid.name.c_str(), soid.snap.val, op.clonerange.offset, op.clonerange.length, op.clonerange.src_offset);
-      ctx->mod_desc.mark_unrollbackable();
-      if (pool.info.require_rollback()) {
-	result = -EOPNOTSUPP;
-	break;
-      }
-      ++ctx->num_read;
-      ++ctx->num_write;
-      {
-	if (maybe_create_new_object(ctx)) {
-	  t->touch(obs.oi.soid);
-	}
-	if (op.clonerange.src_offset + op.clonerange.length > src_obc->obs.oi.size) {
-	  dout(10) << " clonerange source " << osd_op.soid << " "
-		   << op.clonerange.src_offset << "~" << op.clonerange.length
-		   << " extends past size " << src_obc->obs.oi.size << dendl;
-	  result = -EINVAL;
-	  break;
-	}
-	t->clone_range(src_obc->obs.oi.soid,
-		      obs.oi.soid, op.clonerange.src_offset,
-		      op.clonerange.length, op.clonerange.offset);
+            bufferlist t;
+            t.substr_of(osd_op.indata, 0, op.extent.length);
+            osd_op.indata.swap(t);
+          }
 
-	obs.oi.clear_data_digest();
+          //Yuanguo: this case ???
+          //         write-op seq 16
+          //         truncate-op seq 17 (current op)
+          if (op.extent.truncate_seq > seq)
+          {
+            // write arrives before trimtrunc
+            if (obs.exists && !oi.is_whiteout())
+            {
+              dout(10) << " truncate_seq " << op.extent.truncate_seq << " > current " << seq
+                       << ", truncating to " << op.extent.truncate_size << dendl;
 
-	write_update_size_and_usage(ctx->delta_stats, oi, ctx->modified_ranges,
-				    op.clonerange.offset, op.clonerange.length, false);
-      }
-      break;
-      
-    case CEPH_OSD_OP_WATCH:
-      ++ctx->num_write;
-      {
-	tracepoint(osd, do_osd_op_pre_watch, soid.oid.name.c_str(), soid.snap.val,
-		   op.watch.cookie, op.watch.op);
-	if (!obs.exists) {
-	  result = -ENOENT;
-	  break;
-	}
-        uint64_t cookie = op.watch.cookie;
-        entity_name_t entity = ctx->reqid.name;
-	ObjectContextRef obc = ctx->obc;
+              t->truncate(soid, op.extent.truncate_size);
+              oi.truncate_seq = op.extent.truncate_seq;
+              oi.truncate_size = op.extent.truncate_size;
 
-	dout(10) << "watch " << ceph_osd_watch_op_name(op.watch.op)
-		 << ": ctx->obc=" << (void *)obc.get() << " cookie=" << cookie
-		 << " oi.version=" << oi.version.version << " ctx->at_version=" << ctx->at_version << dendl;
-	dout(10) << "watch: oi.user_version=" << oi.user_version<< dendl;
-	dout(10) << "watch: peer_addr="
-	  << ctx->op->get_req()->get_connection()->get_peer_addr() << dendl;
+              if (op.extent.truncate_size != oi.size)
+              {
+                ctx->delta_stats.num_bytes -= oi.size;
+                ctx->delta_stats.num_bytes += op.extent.truncate_size;
+                oi.size = op.extent.truncate_size;
+              }
+            }
+            else
+            {
+              dout(10) << " truncate_seq " << op.extent.truncate_seq << " > current " << seq
+                       << ", but object is new" << dendl;
 
-	watch_info_t w(cookie, cct->_conf->osd_client_watch_timeout,
-	  ctx->op->get_req()->get_connection()->get_peer_addr());
-	if (op.watch.op == CEPH_OSD_WATCH_OP_WATCH ||
-	    op.watch.op == CEPH_OSD_WATCH_OP_LEGACY_WATCH) {
-	  if (oi.watchers.count(make_pair(cookie, entity))) {
-	    dout(10) << " found existing watch " << w << " by " << entity << dendl;
-	  } else {
-	    dout(10) << " registered new watch " << w << " by " << entity << dendl;
-	    oi.watchers[make_pair(cookie, entity)] = w;
-	    t->nop();  // make sure update the object_info on disk!
-	  }
-	  bool will_ping = (op.watch.op == CEPH_OSD_WATCH_OP_WATCH);
-	  ctx->watch_connects.push_back(make_pair(w, will_ping));
-        } else if (op.watch.op == CEPH_OSD_WATCH_OP_RECONNECT) {
-	  if (!oi.watchers.count(make_pair(cookie, entity))) {
-	    result = -ENOTCONN;
-	    break;
-	  }
-	  dout(10) << " found existing watch " << w << " by " << entity << dendl;
-	  ctx->watch_connects.push_back(make_pair(w, true));
-        } else if (op.watch.op == CEPH_OSD_WATCH_OP_PING) {
-	  if (!oi.watchers.count(make_pair(cookie, entity))) {
-	    result = -ENOTCONN;
-	    break;
-	  }
-	  map<pair<uint64_t,entity_name_t>,WatchRef>::iterator p =
-	    obc->watchers.find(make_pair(cookie, entity));
-	  if (p == obc->watchers.end() ||
-	      !p->second->is_connected()) {
-	    // client needs to reconnect
-	    result = -ETIMEDOUT;
-	    break;
-	  }
-	  dout(10) << " found existing watch " << w << " by " << entity << dendl;
-	  p->second->got_ping(ceph_clock_now(NULL));
-	  result = 0;
-        } else if (op.watch.op == CEPH_OSD_WATCH_OP_UNWATCH) {
-	  map<pair<uint64_t, entity_name_t>, watch_info_t>::iterator oi_iter =
-	    oi.watchers.find(make_pair(cookie, entity));
-	  if (oi_iter != oi.watchers.end()) {
-	    dout(10) << " removed watch " << oi_iter->second << " by "
-		     << entity << dendl;
-            oi.watchers.erase(oi_iter);
-	    t->nop();  // update oi on disk
-	    ctx->watch_disconnects.push_back(
-	      watch_disconnect_t(cookie, entity, false));
-	  } else {
-	    dout(10) << " can't remove: no watch by " << entity << dendl;
-	  }
+              oi.truncate_seq = op.extent.truncate_seq;
+              oi.truncate_size = op.extent.truncate_size;
+            }
+          }
+
+          result = check_offset_and_length(op.extent.offset, op.extent.length, cct->_conf->osd_max_object_size);
+          if (result < 0)
+            break;
+
+          if (pool.info.require_rollback())
+          {
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, append" << dendl;
+            t->append(soid, op.extent.offset, op.extent.length, osd_op.indata, op.flags);
+          }
+          else
+          {
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, write/create" << dendl;
+            t->write(soid, op.extent.offset, op.extent.length, osd_op.indata, op.flags);
+          }
+
+          maybe_create_new_object(ctx);
+
+          if (op.extent.offset == 0 && op.extent.length >= oi.size)
+          {
+            obs.oi.set_data_digest(osd_op.indata.crc32c(-1));
+          }
+          else if (op.extent.offset == oi.size && obs.oi.is_data_digest())
+          {
+            obs.oi.set_data_digest(osd_op.indata.crc32c(obs.oi.data_digest));
+          }
+          else
+          {
+            obs.oi.clear_data_digest();
+          }
+
+          write_update_size_and_usage(ctx->delta_stats, oi, ctx->modified_ranges, op.extent.offset, op.extent.length, true);
         }
-      }
-      break;
+        break;
+      
+      case CEPH_OSD_OP_WRITEFULL:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_WRITEFULL" << dendl;
+        ++ctx->num_write;
+        // write full object
+        {
+          tracepoint(osd, do_osd_op_pre_writefull, soid.oid.name.c_str(), soid.snap.val, oi.size, 0, op.extent.length);
+
+          dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, soid.oid=" << soid.oid
+                   << " soid.snap.val=" << soid.snap.val
+                   << " oi.size=" << oi.size
+                   << " op.extent=[" << op.extent.offset << "," << op.extent.length << "," << op.extent.truncate_size << "," << op.extent.truncate_seq << "]" 
+                   << dendl;
+
+          if (op.extent.length != osd_op.indata.length())
+          {
+            result = -EINVAL;
+            break;
+          }
+
+          result = check_offset_and_length(0, op.extent.length, cct->_conf->osd_max_object_size);
+          if (result < 0)
+            break;
+
+          if (pool.info.has_flag(pg_pool_t::FLAG_WRITE_FADVISE_DONTNEED))
+          {
+            op.flags = op.flags | CEPH_OSD_OP_FLAG_FADVISE_DONTNEED;
+          }
+
+          if (pool.info.require_rollback())
+          {
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, require rollback" << dendl;
+            if (obs.exists)
+            {
+              if (ctx->mod_desc.rmobject(ctx->at_version.version))
+              {
+                t->stash(soid, ctx->at_version.version);
+              }
+              else
+              {
+                t->remove(soid);
+              }
+            }
+
+            ctx->mod_desc.create();
+            t->append(soid, 0, op.extent.length, osd_op.indata, op.flags);
+
+            if (obs.exists)
+            {
+              map<string, bufferlist> to_set = ctx->obc->attr_cache;
+              map<string, boost::optional<bufferlist> > &overlay = ctx->pending_attrs[ctx->obc];
+
+              for (map<string, boost::optional<bufferlist> >::iterator i = overlay.begin(); i != overlay.end(); ++i)
+              {
+                if (i->second)
+                {
+                  to_set[i->first] = *(i->second);
+                }
+                else
+                {
+                  to_set.erase(i->first);
+                }
+              }
+              t->setattrs(soid, to_set);
+            }
+          }
+          else
+          {
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, not require rollback" << dendl;
+
+            ctx->mod_desc.mark_unrollbackable();
+            t->write(soid, 0, op.extent.length, osd_op.indata, op.flags);
+            if (obs.exists && op.extent.length < oi.size)
+            {
+              t->truncate(soid, op.extent.length);
+            }
+          }
+
+          maybe_create_new_object(ctx);
+          obs.oi.set_data_digest(osd_op.indata.crc32c(-1));
+
+          write_update_size_and_usage(ctx->delta_stats, oi, ctx->modified_ranges, 0, op.extent.length, true, op.extent.length != oi.size ? true : false);
+        }
+        break;
+
+      case CEPH_OSD_OP_ROLLBACK :
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_ROLLBACK" << dendl;
+        ++ctx->num_write;
+        tracepoint(osd, do_osd_op_pre_rollback, soid.oid.name.c_str(), soid.snap.val);
+        result = _rollback_to(ctx, op);
+        break;
+
+      case CEPH_OSD_OP_ZERO:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_ZERO" << dendl;
+        tracepoint(osd, do_osd_op_pre_zero, soid.oid.name.c_str(), soid.snap.val, op.extent.offset, op.extent.length);
+        if (pool.info.require_rollback())
+        {
+          result = -EOPNOTSUPP;
+          break;
+        }
+
+        ++ctx->num_write;
+        { // zero
+          result = check_offset_and_length(op.extent.offset, op.extent.length, cct->_conf->osd_max_object_size);
+          if (result < 0)
+            break;
+
+          assert(op.extent.length);
+
+          if (obs.exists && !oi.is_whiteout())
+          {
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, exists and not whiteout" << dendl;
+            ctx->mod_desc.mark_unrollbackable();
+            t->zero(soid, op.extent.offset, op.extent.length);
+            interval_set<uint64_t> ch;
+            ch.insert(op.extent.offset, op.extent.length);
+            ctx->modified_ranges.union_of(ch);
+            ctx->delta_stats.num_wr++;
+            oi.clear_data_digest();
+          }
+          else
+          {
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, no op" << dendl;
+            // no-op
+          }
+        }
+        break;
+
+      case CEPH_OSD_OP_CREATE:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_CREATE" << dendl;
+
+        ++ctx->num_write;
+        {
+          tracepoint(osd, do_osd_op_pre_create, soid.oid.name.c_str(), soid.snap.val);
+          int flags = le32_to_cpu(op.flags);
+
+          if (obs.exists && !oi.is_whiteout() && (flags & CEPH_OSD_OP_FLAG_EXCL))
+          {
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, exclusive create failed" << dendl;
+            result = -EEXIST; /* this is an exclusive create */
+          }
+          else
+          {
+            if (osd_op.indata.length())
+            {
+              bufferlist::iterator p = osd_op.indata.begin();
+              string category;
+              try
+              {
+                ::decode(category, p);
+              }
+              catch (buffer::error& e)
+              {
+                result = -EINVAL;
+                goto fail;
+              }
+              // category is no longer implemented.
+            }
+
+            if (result >= 0)
+            {
+              bool is_whiteout = obs.exists && oi.is_whiteout();
+
+              if (maybe_create_new_object(ctx))
+              {
+                ctx->mod_desc.create();
+                t->touch(soid);
+              }
+              else if(is_whiteout)
+              {
+                // to change whiteout to non-whiteout, it need an op to update xattr
+                t->nop();
+              }
+            }
+          }
+        }
+        break;
+
+      case CEPH_OSD_OP_TRIMTRUNC:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_TRIMTRUNC" << dendl;
+        op.extent.offset = op.extent.truncate_size;
+
+      // falling through
+      case CEPH_OSD_OP_TRUNCATE:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_TRUNCATE" << dendl;
+
+        tracepoint(osd, do_osd_op_pre_truncate, soid.oid.name.c_str(), soid.snap.val, oi.size, 
+                oi.truncate_seq, op.extent.offset, op.extent.length, op.extent.truncate_size, op.extent.truncate_seq);
+
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, soid.oid=" << soid.oid 
+          << " soid.snap.val=" << soid.snap.val
+          << " oi.size=" << oi.size
+          << " oi.truncate_seq=" << oi.truncate_seq
+          << " op.extent=[" << op.extent.offset << "," << op.extent.length << "," << op.extent.truncate_size << "," << op.extent.truncate_seq << "]" 
+          << dendl;
+
+        if (pool.info.require_rollback())
+        {
+          result = -EOPNOTSUPP;
+          break;
+        }
+
+        ++ctx->num_write;
+        ctx->mod_desc.mark_unrollbackable();
+
+        {
+          // truncate
+          if (!obs.exists || oi.is_whiteout())
+          {
+            dout(10) << " object dne, truncate is a no-op" << dendl;
+            break;
+          }
+
+          if (op.extent.offset > cct->_conf->osd_max_object_size)
+          {
+            result = -EFBIG;
+            break;
+          }
+
+          if (op.extent.truncate_seq)
+          {
+            assert(op.extent.offset == op.extent.truncate_size);
+
+            if (op.extent.truncate_seq <= oi.truncate_seq)
+            {
+              dout(10) << " truncate seq " << op.extent.truncate_seq << " <= current " << oi.truncate_seq << ", no-op" << dendl;
+              break; // old
+            }
+
+            dout(10) << " truncate seq " << op.extent.truncate_seq << " > current " << oi.truncate_seq << ", truncating" << dendl;
+            oi.truncate_seq = op.extent.truncate_seq;
+            oi.truncate_size = op.extent.truncate_size;
+          }
+
+          t->truncate(soid, op.extent.offset);
+          if (oi.size > op.extent.offset)
+          {
+            interval_set<uint64_t> trim;
+            trim.insert(op.extent.offset, oi.size-op.extent.offset);
+            ctx->modified_ranges.union_of(trim);
+          }
+
+          if (op.extent.offset != oi.size)
+          {
+            ctx->delta_stats.num_bytes -= oi.size;
+            ctx->delta_stats.num_bytes += op.extent.offset;
+            oi.size = op.extent.offset;
+          }
+          ctx->delta_stats.num_wr++;
+          // do no set exists, or we will break above DELETE -> TRUNCATE munging.
+
+          oi.clear_data_digest();
+        }
+        break;
+    
+      case CEPH_OSD_OP_DELETE:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_DELETE" << dendl;
+        ++ctx->num_write;
+        tracepoint(osd, do_osd_op_pre_delete, soid.oid.name.c_str(), soid.snap.val);
+        result = _delete_oid(ctx, ctx->ignore_cache);
+        break;
+
+      case CEPH_OSD_OP_CLONERANGE:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_CLONERANGE" << dendl;
+        tracepoint(osd, do_osd_op_pre_clonerange, soid.oid.name.c_str(), soid.snap.val, op.clonerange.offset, op.clonerange.length, op.clonerange.src_offset);
+
+        ctx->mod_desc.mark_unrollbackable();
+        if (pool.info.require_rollback())
+        {
+          result = -EOPNOTSUPP;
+          break;
+        }
+
+        ++ctx->num_read;
+        ++ctx->num_write;
+
+        {
+          if (maybe_create_new_object(ctx))
+          {
+            t->touch(obs.oi.soid);
+          }
+
+          if (op.clonerange.src_offset + op.clonerange.length > src_obc->obs.oi.size)
+          {
+            dout(10) << " clonerange source " << osd_op.soid << " "
+              << op.clonerange.src_offset << "~" << op.clonerange.length
+              << " extends past size " << src_obc->obs.oi.size << dendl;
+            result = -EINVAL;
+            break;
+          }
+
+          t->clone_range(src_obc->obs.oi.soid, obs.oi.soid, op.clonerange.src_offset, op.clonerange.length, op.clonerange.offset);
+
+          obs.oi.clear_data_digest();
+
+          write_update_size_and_usage(ctx->delta_stats, oi, ctx->modified_ranges, op.clonerange.offset, op.clonerange.length, false);
+        }
+        break;
+      
+      case CEPH_OSD_OP_WATCH:
+        dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, CEPH_OSD_OP_WATCH" << dendl;
+        ++ctx->num_write;
+        {
+          tracepoint(osd, do_osd_op_pre_watch, soid.oid.name.c_str(), soid.snap.val, op.watch.cookie, op.watch.op);
+
+          if (!obs.exists)
+          {
+            result = -ENOENT;
+            break;
+          }
+
+          uint64_t cookie = op.watch.cookie;
+          entity_name_t entity = ctx->reqid.name;
+          ObjectContextRef obc = ctx->obc;
+
+          dout(10) << "watch " << ceph_osd_watch_op_name(op.watch.op)
+                   << ": ctx->obc=" << (void *)obc.get() << " cookie=" << cookie
+                   << " oi.version=" << oi.version.version << " ctx->at_version=" << ctx->at_version << dendl;
+
+          dout(10) << "watch: oi.user_version=" << oi.user_version<< dendl;
+          dout(10) << "watch: peer_addr=" << ctx->op->get_req()->get_connection()->get_peer_addr() << dendl;
+
+          watch_info_t w(cookie, cct->_conf->osd_client_watch_timeout, ctx->op->get_req()->get_connection()->get_peer_addr());
+
+          if (op.watch.op == CEPH_OSD_WATCH_OP_WATCH || op.watch.op == CEPH_OSD_WATCH_OP_LEGACY_WATCH)
+          {
+            if (oi.watchers.count(make_pair(cookie, entity)))
+            {
+              dout(10) << " found existing watch " << w << " by " << entity << dendl;
+            }
+            else
+            {
+              dout(10) << " registered new watch " << w << " by " << entity << dendl;
+              oi.watchers[make_pair(cookie, entity)] = w;
+              t->nop();  // make sure update the object_info on disk!
+            }
+
+            bool will_ping = (op.watch.op == CEPH_OSD_WATCH_OP_WATCH);
+            ctx->watch_connects.push_back(make_pair(w, will_ping));
+          }
+          else if(op.watch.op == CEPH_OSD_WATCH_OP_RECONNECT)
+          {
+            if (!oi.watchers.count(make_pair(cookie, entity)))
+            {
+              result = -ENOTCONN;
+              break;
+            }
+            dout(10) << " found existing watch " << w << " by " << entity << dendl;
+            ctx->watch_connects.push_back(make_pair(w, true));
+          }
+          else if(op.watch.op == CEPH_OSD_WATCH_OP_PING)
+          {
+            if (!oi.watchers.count(make_pair(cookie, entity)))
+            {
+              result = -ENOTCONN;
+              break;
+            }
+
+            map<pair<uint64_t,entity_name_t>,WatchRef>::iterator p = obc->watchers.find(make_pair(cookie, entity));
+            if (p == obc->watchers.end() || !p->second->is_connected())
+            {
+              // client needs to reconnect
+              result = -ETIMEDOUT;
+              break;
+            }
+
+            dout(10) << " found existing watch " << w << " by " << entity << dendl;
+            p->second->got_ping(ceph_clock_now(NULL));
+            result = 0;
+          }
+          else if (op.watch.op == CEPH_OSD_WATCH_OP_UNWATCH)
+          {
+            map<pair<uint64_t, entity_name_t>, watch_info_t>::iterator oi_iter = oi.watchers.find(make_pair(cookie, entity));
+
+            if (oi_iter != oi.watchers.end())
+            {
+              dout(10) << " removed watch " << oi_iter->second << " by " << entity << dendl;
+              oi.watchers.erase(oi_iter);
+              t->nop();  // update oi on disk
+              ctx->watch_disconnects.push_back(watch_disconnect_t(cookie, entity, false));
+            }
+            else
+            {
+              dout(10) << " can't remove: no watch by " << entity << dendl;
+            }
+          }
+        }
+        break;
 
     case CEPH_OSD_OP_CACHE_PIN:
       tracepoint(osd, do_osd_op_pre_cache_pin, soid.oid.name.c_str(), soid.snap.val);
