@@ -390,8 +390,10 @@ public:
     const eversion_t &trim_to,
     const eversion_t &trim_rollback_to,
     bool transaction_applied,
-    ObjectStore::Transaction &t) {
-    if (hset_history) {
+    ObjectStore::Transaction &t)
+  {
+    if (hset_history)
+    {
       info.hit_set = *hset_history;
       dirty_info = true;
     }
@@ -482,7 +484,8 @@ public:
   /*
    * Capture all object state associated with an in-progress read or write.
    */
-  struct OpContext {
+  struct OpContext
+  {
     OpRequestRef op;
     osd_reqid_t reqid;
     vector<OSDOp> &ops;
@@ -561,18 +564,22 @@ public:
     list<std::function<void()>> on_committed;
     list<std::function<void()>> on_finish;
     list<std::function<void()>> on_success;
+
     template <typename F>
     void register_on_finish(F &&f) {
       on_finish.emplace_back(std::move(f));
     }
+    
     template <typename F>
     void register_on_success(F &&f) {
       on_success.emplace_back(std::move(f));
     }
+
     template <typename F>
     void register_on_applied(F &&f) {
       on_applied.emplace_back(std::move(f));
     }
+
     template <typename F>
     void register_on_commit(F &&f) {
       on_committed.emplace_back(std::move(f));
@@ -581,25 +588,24 @@ public:
     bool sent_ack;
     bool sent_disk;
 
-    void apply_pending_attrs() {
-      for (map<ObjectContextRef,
-	     map<string, boost::optional<bufferlist> > >::iterator i =
-	     pending_attrs.begin();
-	   i != pending_attrs.end();
-	   ++i) {
-	if (i->first->obs.exists) {
-	  for (map<string, boost::optional<bufferlist> >::iterator j =
-		 i->second.begin();
-	       j != i->second.end();
-	       ++j) {
-	    if (j->second)
-	      i->first->attr_cache[j->first] = j->second.get();
-	    else
-	      i->first->attr_cache.erase(j->first);
-	  }
-	} else {
-	  i->first->attr_cache.clear();
-	}
+    void apply_pending_attrs()
+    {
+      for (map<ObjectContextRef, map<string, boost::optional<bufferlist> > >::iterator i = pending_attrs.begin(); i != pending_attrs.end(); ++i)
+      {
+        if (i->first->obs.exists)
+        {
+          for (map<string, boost::optional<bufferlist> >::iterator j = i->second.begin(); j != i->second.end(); ++j)
+          {
+            if (j->second)
+              i->first->attr_cache[j->first] = j->second.get();
+            else
+              i->first->attr_cache.erase(j->first);
+          }
+        }
+        else
+        {
+          i->first->attr_cache.clear();
+        }
       }
       pending_attrs.clear();
     }
@@ -689,11 +695,17 @@ public:
   /*
    * State on the PG primary associated with the replicated mutation
    */
-  class RepGather {
+  class RepGather
+  {
   public:
     hobject_t hoid;
     OpRequestRef op;
+
+    //Yuanguo: queue_item is essentially "this"; it is used to make it easier
+    //   to put "this" into ReplicatedPG::repop_queue; See function
+    //   ReplicatedPG::new_repop()
     xlist<RepGather*>::item queue_item;
+
     int nref;
 
     eversion_t v;
@@ -716,13 +728,12 @@ public:
     list<std::function<void()>> on_success;
     list<std::function<void()>> on_finish;
     
-    RepGather(OpContext *c, ceph_tid_t rt,
-	      eversion_t lc) :
+    RepGather(OpContext *c, ceph_tid_t rt, eversion_t lc) : 
       hoid(c->obc->obs.oi.soid),
       op(c->op),
       queue_item(this),
       nref(1),
-      rep_tid(rt), 
+      rep_tid(rt),
       rep_aborted(false), rep_done(false),
       all_applied(false), all_committed(false),
       pg_local_last_complete(lc),
@@ -730,7 +741,9 @@ public:
       on_applied(std::move(c->on_applied)),
       on_committed(std::move(c->on_committed)),
       on_success(std::move(c->on_success)),
-      on_finish(std::move(c->on_finish)) {}
+      on_finish(std::move(c->on_finish))
+    {
+    }
 
     RepGather(
       ObcLockManager &&manager,
@@ -749,16 +762,20 @@ public:
       }
     }
 
-    RepGather *get() {
+    RepGather *get()
+    {
       nref++;
       return this;
     }
-    void put() {
+
+    void put()
+    {
       assert(nref > 0);
-      if (--nref == 0) {
-	assert(on_applied.empty());
-	delete this;
-	//generic_dout(0) << "deleting " << this << dendl;
+      if (--nref == 0)
+      {
+        assert(on_applied.empty());
+        delete this;
+        //generic_dout(0) << "deleting " << this << dendl;
       }
     }
   };
@@ -772,39 +789,53 @@ protected:
    * @param ctx [in,out] ctx to get locks for
    * @return true on success, false if we are queued
    */
-  bool get_rw_locks(bool write_ordered, OpContext *ctx) {
+  bool get_rw_locks(bool write_ordered, OpContext *ctx)
+  {
     /* If snapset_obc, !obc->obs->exists and we will always take the
      * snapdir lock *before* the head lock.  Since all callers will do
      * this (read or write) if we get the first we will be guaranteed
      * to get the second.
      */
-    if (write_ordered && ctx->op->may_read()) {
+
+    generic_dout(99) << "ReplicatedPG::get_rw_locks, write_ordered=" << write_ordered << dendl;
+
+    if (write_ordered && ctx->op->may_read())
+    {
       ctx->lock_type = ObjectContext::RWState::RWEXCL;
-    } else if (write_ordered) {
+    }
+    else if (write_ordered)
+    {
       ctx->lock_type = ObjectContext::RWState::RWWRITE;
-    } else {
+    }
+    else
+    {
       assert(ctx->op->may_read());
       ctx->lock_type = ObjectContext::RWState::RWREAD;
     }
 
-    if (ctx->snapset_obc) {
+    if (ctx->snapset_obc)
+    {
       assert(!ctx->obc->obs.exists);
-      if (!ctx->lock_manager.get_lock_type(
-	    ctx->lock_type,
-	    ctx->snapset_obc->obs.oi.soid,
-	    ctx->snapset_obc,
-	    ctx->op)) {
-	ctx->lock_type = ObjectContext::RWState::RWNONE;
-	return false;
+      if (!ctx->lock_manager.get_lock_type(ctx->lock_type, ctx->snapset_obc->obs.oi.soid, ctx->snapset_obc, ctx->op))
+      {
+        generic_dout(99) << "ReplicatedPG::get_rw_locks, failed to lock snapset " << ctx->obc->obs.oi.soid << " with type " << ctx->lock_type << dendl;
+        ctx->lock_type = ObjectContext::RWState::RWNONE;
+        return false;
+      }
+      else
+      {
+        generic_dout(99) << "ReplicatedPG::get_rw_locks, locked snapset " << ctx->obc->obs.oi.soid << " with type " << ctx->lock_type << dendl;
       }
     }
-    if (ctx->lock_manager.get_lock_type(
-	  ctx->lock_type,
-	  ctx->obc->obs.oi.soid,
-	  ctx->obc,
-	  ctx->op)) {
+
+    if (ctx->lock_manager.get_lock_type(ctx->lock_type, ctx->obc->obs.oi.soid, ctx->obc, ctx->op))
+    {
+      generic_dout(99) << "ReplicatedPG::get_rw_locks, locked " << ctx->obc->obs.oi.soid << " with type " << ctx->lock_type << dendl;
       return true;
-    } else {
+    }
+    else
+    {
+      generic_dout(99) << "ReplicatedPG::get_rw_locks, failed to lock " << ctx->obc->obs.oi.soid << " with type " << ctx->lock_type << dendl;
       assert(!ctx->snapset_obc);
       ctx->lock_type = ObjectContext::RWState::RWNONE;
       return false;
@@ -816,12 +847,14 @@ protected:
    *
    * @param ctx [in] ctx to clean up
    */
-  void close_op_ctx(OpContext *ctx) {
+  void close_op_ctx(OpContext *ctx)
+  {
     release_object_locks(ctx->lock_manager);
+
     ctx->op_t.reset();
-    for (auto p = ctx->on_finish.begin();
-	 p != ctx->on_finish.end();
-	 ctx->on_finish.erase(p++)) {
+
+    for (auto p = ctx->on_finish.begin(); p != ctx->on_finish.end(); ctx->on_finish.erase(p++))
+    {
       (*p)();
     }
     delete ctx;
@@ -833,33 +866,36 @@ protected:
    * @param manager [in] manager with locks to release
    */
   void release_object_locks(
-    ObcLockManager &lock_manager) {
+    ObcLockManager &lock_manager)
+  {
     list<pair<hobject_t, list<OpRequestRef> > > to_req;
     bool requeue_recovery = false;
     bool requeue_snaptrim = false;
-    lock_manager.put_locks(
-      &to_req,
-      &requeue_recovery,
-      &requeue_snaptrim);
+
+    lock_manager.put_locks(&to_req, &requeue_recovery, &requeue_snaptrim);
+
     if (requeue_recovery)
       osd->recovery_wq.queue(this);
     if (requeue_snaptrim)
       queue_snap_trim();
 
-    if (!to_req.empty()) {
+    if (!to_req.empty())
+    {
       // requeue at front of scrub blocking queue if we are blocked by scrub
-      for (auto &&p: to_req) {
-	if (scrubber.write_blocked_by_scrub(
-	      p.first.get_head(),
-	      get_sort_bitwise())) {
-	  waiting_for_active.splice(
-	    waiting_for_active.begin(),
-	    p.second,
-	    p.second.begin(),
-	    p.second.end());
-	} else {
-	  requeue_ops(p.second);
-	}
+      for (auto &&p: to_req)
+      {
+        if (scrubber.write_blocked_by_scrub(p.first.get_head(), get_sort_bitwise()))
+        {
+          waiting_for_active.splice(
+              waiting_for_active.begin(),
+              p.second,
+              p.second.begin(),
+              p.second.end());
+        }
+        else
+        {
+          requeue_ops(p.second);
+        }
       }
     }
   }
@@ -1283,20 +1319,29 @@ protected:
   void send_remove_op(const hobject_t& oid, eversion_t v, pg_shard_t peer);
 
 
-  struct C_OSD_OndiskWriteUnlock : public Context {
+  struct C_OSD_OndiskWriteUnlock : public Context
+  {
     ObjectContextRef obc, obc2, obc3;
-    C_OSD_OndiskWriteUnlock(
-      ObjectContextRef o,
-      ObjectContextRef o2 = ObjectContextRef(),
-      ObjectContextRef o3 = ObjectContextRef()) : obc(o), obc2(o2), obc3(o3) {}
-    void finish(int r) {
+
+    C_OSD_OndiskWriteUnlock(ObjectContextRef o, ObjectContextRef o2 = ObjectContextRef(), ObjectContextRef o3 = ObjectContextRef()) : 
+      obc(o), obc2(o2), obc3(o3)
+    {
+    }
+
+    void finish(int r)
+    {
       obc->ondisk_write_unlock();
       if (obc2)
-	obc2->ondisk_write_unlock();
+      {
+        obc2->ondisk_write_unlock();
+      }
       if (obc3)
-	obc3->ondisk_write_unlock();
+      {
+        obc3->ondisk_write_unlock();
+      }
     }
   };
+
   struct C_OSD_OndiskWriteUnlockList : public Context {
     list<ObjectContextRef> *pls;
     explicit C_OSD_OndiskWriteUnlockList(list<ObjectContextRef> *l) : pls(l) {}

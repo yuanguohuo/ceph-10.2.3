@@ -96,7 +96,8 @@ private:
   };
 
   /// Encodes in progress split or merge
-  struct InProgressOp {
+  struct InProgressOp
+  {
     static const int SPLIT = 0;
     static const int MERGE = 1;
     static const int COL_SPLIT = 2;
@@ -104,9 +105,12 @@ private:
     vector<string> path;
 
     InProgressOp(int op, const vector<string> &path)
-      : op(op), path(path) {}
+      : op(op), path(path)
+    {
+    }
 
-    explicit InProgressOp(bufferlist::iterator &bl) {
+    explicit InProgressOp(bufferlist::iterator &bl)
+    {
       decode(bl);
     }
 
@@ -114,14 +118,16 @@ private:
     bool is_col_split() const { return op == COL_SPLIT; }
     bool is_merge() const { return op == MERGE; }
 
-    void encode(bufferlist &bl) const {
+    void encode(bufferlist &bl) const
+    {
       __u8 v = 1;
       ::encode(v, bl);
       ::encode(op, bl);
       ::encode(path, bl);
     }
 
-    void decode(bufferlist::iterator &bl) {
+    void decode(bufferlist::iterator &bl)
+    {
       __u8 v;
       ::decode(v, bl);
       assert(v == 1);

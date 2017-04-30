@@ -1845,6 +1845,7 @@ void FileStore::queue_op(OpSequencer *osr, Op *o)
 	  << " " << o->bytes << " bytes"
 	  << "   (queue has " << throttle_ops.get_current() << " ops and " << throttle_bytes.get_current() << " bytes)"
 	  << dendl;
+
   op_wq.queue(osr);
 }
 
@@ -1867,30 +1868,38 @@ void FileStore::op_queue_release_throttle(Op *o)
 
 void FileStore::_do_op(OpSequencer *osr, ThreadPool::TPHandle &handle)
 {
-  if (!m_disable_wbthrottle) {
+  if (!m_disable_wbthrottle)
+  {
     wbthrottle.throttle();
   }
   // inject a stall?
-  if (g_conf->filestore_inject_stall) {
+  if (g_conf->filestore_inject_stall)
+  {
     int orig = g_conf->filestore_inject_stall;
     dout(5) << "_do_op filestore_inject_stall " << orig << ", sleeping" << dendl;
     for (int n = 0; n < g_conf->filestore_inject_stall; n++)
+    {
       sleep(1);
+    }
     g_conf->set_val("filestore_inject_stall", "0");
     dout(5) << "_do_op done stalling" << dendl;
   }
 
-  osr->apply_lock.Lock();
+  osr->apply_lock.Lock();  //Yuanguo: unlock in _finish_op
+
   Op *o = osr->peek_queue();
+
   apply_manager.op_apply_start(o->op);
+
   dout(5) << "_do_op " << o << " seq " << o->op << " " << *osr << "/" << osr->parent << " start" << dendl;
   int r = _do_transactions(o->tls, o->op, &handle);
+
   apply_manager.op_apply_finish(o->op);
+
   dout(10) << "_do_op " << o << " seq " << o->op << " r = " << r
 	   << ", finisher " << o->onreadable << " " << o->onreadable_sync << dendl;
 
   o->tls.clear();
-
 }
 
 void FileStore::_finish_op(OpSequencer *osr)
@@ -1909,28 +1918,45 @@ void FileStore::_finish_op(OpSequencer *osr)
 
   logger->tinc(l_os_apply_lat, lat);
 
-  if (o->onreadable_sync) {
+  if (o->onreadable_sync)
+  {
+    //Yuanguo: 'sync' here means to call the callback in this thread, instead of putting in a queue and call it 
+    //in another thread (comparing with onreadable); it does NOT mean to call it when data is synced to disk;
+    //the onreadable_sync callback is to unlock "ondisk write lock", see 
+    //    ReplicatedPG::execute_ctx     -->
+    //    ReplicatedPG::issue_repop     -->
+    //    ReplicatedBackend::submit_transaction 
     o->onreadable_sync->complete(0);
   }
-  if (o->onreadable) {
+
+  if (o->onreadable)
+  {
     apply_finishers[osr->id % m_apply_finisher_num]->queue(o->onreadable);
   }
-  if (!to_queue.empty()) {
+
+  if (!to_queue.empty())
+  {
     apply_finishers[osr->id % m_apply_finisher_num]->queue(to_queue);
   }
+
   delete o;
 }
 
 
-struct C_JournaledAhead : public Context {
+struct C_JournaledAhead : public Context
+{
   FileStore *fs;
   FileStore::OpSequencer *osr;
   FileStore::Op *o;
   Context *ondisk;
 
   C_JournaledAhead(FileStore *f, FileStore::OpSequencer *os, FileStore::Op *o, Context *ondisk):
-    fs(f), osr(os), o(o), ondisk(ondisk) { }
-  void finish(int r) {
+    fs(f), osr(os), o(o), ondisk(ondisk)
+  {
+  }
+
+  void finish(int r)
+  {
     fs->_journaled_ahead(osr, o, ondisk);
   }
 };
@@ -1942,9 +1968,11 @@ int FileStore::queue_transactions(Sequencer *posr, vector<Transaction>& tls,
   Context *onreadable;
   Context *ondisk;
   Context *onreadable_sync;
-  ObjectStore::Transaction::collect_contexts(
-    tls, &onreadable, &ondisk, &onreadable_sync);
-  if (g_conf->filestore_blackhole) {
+
+  ObjectStore::Transaction::collect_contexts(tls, &onreadable, &ondisk, &onreadable_sync);
+
+  if (g_conf->filestore_blackhole)
+  {
     dout(0) << "queue_transactions filestore_blackhole = TRUE, dropping transaction" << dendl;
     delete ondisk;
     delete onreadable;
@@ -1956,10 +1984,14 @@ int FileStore::queue_transactions(Sequencer *posr, vector<Transaction>& tls,
   // set up the sequencer
   OpSequencer *osr;
   assert(posr);
-  if (posr->p) {
+
+  if (posr->p)
+  {
     osr = static_cast<OpSequencer *>(posr->p.get());
     dout(5) << "queue_transactions existing " << osr << " " << *osr << dendl;
-  } else {
+  }
+  else
+  {
     osr = new OpSequencer(next_osr_id.inc());
     osr->set_cct(g_ceph_context);
     osr->parent = posr;
@@ -1968,11 +2000,13 @@ int FileStore::queue_transactions(Sequencer *posr, vector<Transaction>& tls,
   }
 
   // used to include osr information in tracepoints during transaction apply
-  for (vector<Transaction>::iterator i = tls.begin(); i != tls.end(); ++i) {
+  for (vector<Transaction>::iterator i = tls.begin(); i != tls.end(); ++i)
+  {
     (*i).set_osr(osr);
   }
 
-  if (journal && journal->is_writeable() && !m_filestore_journal_trailing) {
+  if (journal && journal->is_writeable() && !m_filestore_journal_trailing)
+  {
     Op *o = build_op(tls, onreadable, onreadable_sync, osd_op);
 
     //prepare and encode transactions data out of lock
@@ -1980,28 +2014,37 @@ int FileStore::queue_transactions(Sequencer *posr, vector<Transaction>& tls,
     int orig_len = journal->prepare_entry(o->tls, &tbl);
 
     if (handle)
+    {
       handle->suspend_tp_timeout();
+    }
 
     op_queue_reserve_throttle(o);
     journal->reserve_throttle_and_backoff(tbl.length());
 
     if (handle)
+    {
       handle->reset_tp_timeout();
+    }
 
     uint64_t op_num = submit_manager.op_submit_start();
     o->op = op_num;
 
     if (m_filestore_do_dump)
+    {
       dump_transactions(o->tls, o->op, osr);
+    }
 
-    if (m_filestore_journal_parallel) {
+    if (m_filestore_journal_parallel)
+    {
       dout(5) << "queue_transactions (parallel) " << o->op << " " << o->tls << dendl;
 
       _op_journal_transactions(tbl, orig_len, o->op, ondisk, osd_op);
 
       // queue inside submit_manager op submission lock
       queue_op(osr, o);
-    } else if (m_filestore_journal_writeahead) {
+    }
+    else if (m_filestore_journal_writeahead)
+    {
       dout(5) << "queue_transactions (writeahead) " << o->op << " " << o->tls << dendl;
 
       osr->queue_journal(o->op);
@@ -2009,16 +2052,20 @@ int FileStore::queue_transactions(Sequencer *posr, vector<Transaction>& tls,
       _op_journal_transactions(tbl, orig_len, o->op,
 			       new C_JournaledAhead(this, osr, o, ondisk),
 			       osd_op);
-    } else {
+    }
+    else
+    {
       assert(0);
     }
+
     submit_manager.op_submit_finish(op_num);
     utime_t end = ceph_clock_now(g_ceph_context);
     logger->tinc(l_os_queue_lat, end - start);
     return 0;
   }
 
-  if (!journal) {
+  if (!journal)
+  {
     Op *o = build_op(tls, onreadable, onreadable_sync, osd_op);
     dout(5) << __func__ << " (no journal) " << o << " " << tls << dendl;
 
@@ -2095,11 +2142,14 @@ void FileStore::_journaled_ahead(OpSequencer *osr, Op *o, Context *ondisk)
 
   // do ondisk completions async, to prevent any onreadable_sync completions
   // getting blocked behind an ondisk completion.
-  if (ondisk) {
+  if (ondisk)
+  {
     dout(10) << " queueing ondisk " << ondisk << dendl;
     ondisk_finishers[osr->id % m_ondisk_finisher_num]->queue(ondisk);
   }
-  if (!to_queue.empty()) {
+
+  if (!to_queue.empty())
+  {
     ondisk_finishers[osr->id % m_ondisk_finisher_num]->queue(to_queue);
   }
 }
@@ -2111,9 +2161,8 @@ int FileStore::_do_transactions(
 {
   int trans_num = 0;
 
-  for (vector<Transaction>::iterator p = tls.begin();
-       p != tls.end();
-       ++p, trans_num++) {
+  for (vector<Transaction>::iterator p = tls.begin(); p != tls.end(); ++p, trans_num++)
+  {
     _do_transaction(*p, op_seq, trans_num, handle);
     if (handle)
       handle->reset_tp_timeout();
@@ -2396,52 +2445,70 @@ void FileStore::_do_transaction(
   Transaction::iterator i = t.begin();
 
   SequencerPosition spos(op_seq, trans_num, 0);
-  while (i.have_op()) {
+  while (i.have_op())
+  {
     if (handle)
+    {
       handle->reset_tp_timeout();
+    }
 
     Transaction::Op *op = i.decode_op();
     int r = 0;
 
     _inject_failure();
 
-    switch (op->op) {
+    switch (op->op)
+    {
     case Transaction::OP_NOP:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_NOP" << &t << dendl;
       break;
+
     case Transaction::OP_TOUCH:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_TOUCH" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
+
         tracepoint(objectstore, touch_enter, osr_name);
+
         if (_check_replay_guard(cid, oid, spos) > 0)
+        {
           r = _touch(cid, oid);
+        }
         tracepoint(objectstore, touch_exit, r);
       }
       break;
 
     case Transaction::OP_WRITE:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_WRITE" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         uint64_t off = op->off;
         uint64_t len = op->len;
         uint32_t fadvise_flags = i.get_fadvise_flags();
         bufferlist bl;
         i.decode_bl(bl);
+
         tracepoint(objectstore, write_enter, osr_name, off, len);
+
         if (_check_replay_guard(cid, oid, spos) > 0)
+        {
           r = _write(cid, oid, off, len, bl, fadvise_flags);
+        }
+
         tracepoint(objectstore, write_exit, r);
       }
       break;
 
     case Transaction::OP_ZERO:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_ZERO" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         uint64_t off = op->off;
         uint64_t len = op->len;
         tracepoint(objectstore, zero_enter, osr_name, off, len);
@@ -2452,16 +2519,18 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_TRIMCACHE:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_TRIMCACHE" << &t << dendl;
       {
 	// deprecated, no-op
       }
       break;
 
     case Transaction::OP_TRUNCATE:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_TRUNCATE" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         uint64_t off = op->off;
         tracepoint(objectstore, truncate_enter, osr_name, off);
         if (_check_replay_guard(cid, oid, spos) > 0)
@@ -2471,10 +2540,11 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_REMOVE:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_REMOVE" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         tracepoint(objectstore, remove_enter, osr_name);
         if (_check_replay_guard(cid, oid, spos) > 0)
           r = _remove(cid, oid, spos);
@@ -2483,47 +2553,62 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_SETATTR:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_SETATTR" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         string name = i.decode_string();
         bufferlist bl;
         i.decode_bl(bl);
+
         tracepoint(objectstore, setattr_enter, osr_name);
-        if (_check_replay_guard(cid, oid, spos) > 0) {
+
+        if (_check_replay_guard(cid, oid, spos) > 0)
+        {
           map<string, bufferptr> to_set;
           to_set[name] = bufferptr(bl.c_str(), bl.length());
           r = _setattrs(cid, oid, to_set, spos);
           if (r == -ENOSPC)
-            dout(0) << " ENOSPC on setxattr on " << cid << "/" << oid
-                    << " name " << name << " size " << bl.length() << dendl;
+          {
+            dout(0) << " ENOSPC on setxattr on " << cid << "/" << oid << " name " << name << " size " << bl.length() << dendl;
+          }
         }
         tracepoint(objectstore, setattr_exit, r);
       }
       break;
 
     case Transaction::OP_SETATTRS:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_SETATTRS" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         map<string, bufferptr> aset;
         i.decode_attrset(aset);
+
         tracepoint(objectstore, setattrs_enter, osr_name);
+
         if (_check_replay_guard(cid, oid, spos) > 0)
+        {
           r = _setattrs(cid, oid, aset, spos);
+        }
+
         tracepoint(objectstore, setattrs_exit, r);
+
         if (r == -ENOSPC)
+        {
           dout(0) << " ENOSPC on setxattrs on " << cid << "/" << oid << dendl;
+        }
       }
       break;
 
     case Transaction::OP_RMATTR:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_RMATTR" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         string name = i.decode_string();
         tracepoint(objectstore, rmattr_enter, osr_name);
         if (_check_replay_guard(cid, oid, spos) > 0)
@@ -2533,10 +2618,11 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_RMATTRS:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_RMATTRS" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         tracepoint(objectstore, rmattrs_enter, osr_name);
         if (_check_replay_guard(cid, oid, spos) > 0)
           r = _rmattrs(cid, oid, spos);
@@ -2545,10 +2631,11 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_CLONE:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_CLONE" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         ghobject_t noid = i.get_oid(op->dest_oid);
         tracepoint(objectstore, clone_enter, osr_name);
         r = _clone(cid, oid, noid, spos);
@@ -2557,12 +2644,13 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_CLONERANGE:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_CLONERANGE" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         ghobject_t noid = i.get_oid(op->dest_oid);
-	_kludge_temp_object_collection(cid, noid);
+        _kludge_temp_object_collection(cid, noid);
         uint64_t off = op->off;
         uint64_t len = op->len;
         tracepoint(objectstore, clone_range_enter, osr_name, len);
@@ -2572,12 +2660,13 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_CLONERANGE2:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_CLONERANGE2" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         ghobject_t noid = i.get_oid(op->dest_oid);
-	_kludge_temp_object_collection(cid, noid);
+        _kludge_temp_object_collection(cid, noid);
         uint64_t srcoff = op->off;
         uint64_t len = op->len;
         uint64_t dstoff = op->dest_off;
@@ -2588,6 +2677,7 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_MKCOLL:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_MKCOLL" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         tracepoint(objectstore, mkcoll_enter, osr_name);
@@ -2598,21 +2688,26 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_COLL_HINT:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_COLL_HINT" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         uint32_t type = op->hint_type;
         bufferlist hint;
         i.decode_bl(hint);
         bufferlist::iterator hiter = hint.begin();
-        if (type == Transaction::COLL_HINT_EXPECTED_NUM_OBJECTS) {
+        if (type == Transaction::COLL_HINT_EXPECTED_NUM_OBJECTS)
+        {
           uint32_t pg_num;
           uint64_t num_objs;
           ::decode(pg_num, hiter);
           ::decode(num_objs, hiter);
-          if (_check_replay_guard(cid, spos) > 0) {
+          if (_check_replay_guard(cid, spos) > 0)
+          {
             r = _collection_hint_expected_num_objs(cid, pg_num, num_objs, spos);
           }
-        } else {
+        }
+        else
+        {
           // Ignore the hint
           dout(10) << "Unrecognized collection hint type: " << type << dendl;
         }
@@ -2620,6 +2715,7 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_RMCOLL:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_RMCOLL" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         tracepoint(objectstore, rmcoll_enter, osr_name);
@@ -2630,12 +2726,13 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_COLL_ADD:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_COLL_ADD" << &t << dendl;
       {
         coll_t ocid = i.get_cid(op->cid);
         coll_t ncid = i.get_cid(op->dest_cid);
         ghobject_t oid = i.get_oid(op->oid);
 
-	assert(oid.hobj.pool >= -1);
+        assert(oid.hobj.pool >= -1);
 
         // always followed by OP_COLL_REMOVE
         Transaction::Op *op2 = i.decode_op();
@@ -2659,6 +2756,7 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_COLL_MOVE:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_COLL_MOVE" << &t << dendl;
       {
         // WARNING: this is deprecated and buggy; only here to replay old journals.
         coll_t ocid = i.get_cid(op->cid);
@@ -2666,21 +2764,23 @@ void FileStore::_do_transaction(
         ghobject_t oid = i.get_oid(op->oid);
         tracepoint(objectstore, coll_move_enter);
         r = _collection_add(ocid, ncid, oid, spos);
-        if (r == 0 &&
-            (_check_replay_guard(ocid, oid, spos) > 0))
+        if (r == 0 && (_check_replay_guard(ocid, oid, spos) > 0))
+        {
           r = _remove(ocid, oid, spos);
+        }
         tracepoint(objectstore, coll_move_exit, r);
       }
       break;
 
     case Transaction::OP_COLL_MOVE_RENAME:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_COLL_MOVE_RENAME" << &t << dendl;
       {
         coll_t oldcid = i.get_cid(op->cid);
         ghobject_t oldoid = i.get_oid(op->oid);
         coll_t newcid = i.get_cid(op->dest_cid);
         ghobject_t newoid = i.get_oid(op->dest_oid);
-	_kludge_temp_object_collection(oldcid, oldoid);
-	_kludge_temp_object_collection(newcid, newoid);
+        _kludge_temp_object_collection(oldcid, oldoid);
+        _kludge_temp_object_collection(newcid, newoid);
         tracepoint(objectstore, coll_move_rename_enter);
         r = _collection_move_rename(oldcid, oldoid, newcid, newoid, spos);
         tracepoint(objectstore, coll_move_rename_exit, r);
@@ -2688,13 +2788,14 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_TRY_RENAME:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_TRY_RENAME" << &t << dendl;
       {
         coll_t oldcid = i.get_cid(op->cid);
-	coll_t newcid = oldcid;
+        coll_t newcid = oldcid;
         ghobject_t oldoid = i.get_oid(op->oid);
         ghobject_t newoid = i.get_oid(op->dest_oid);
-	_kludge_temp_object_collection(oldcid, oldoid);
-	_kludge_temp_object_collection(newcid, newoid);
+        _kludge_temp_object_collection(oldcid, oldoid);
+        _kludge_temp_object_collection(newcid, newoid);
         tracepoint(objectstore, coll_try_rename_enter);
         r = _collection_move_rename(oldcid, oldoid, newcid, newoid, spos, true);
         tracepoint(objectstore, coll_try_rename_exit, r);
@@ -2702,6 +2803,7 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_COLL_SETATTR:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_COLL_SETATTR" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         string name = i.decode_string();
@@ -2715,6 +2817,7 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_COLL_RMATTR:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_COLL_RMATTR" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         string name = i.decode_string();
@@ -2726,32 +2829,37 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_STARTSYNC:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_STARTSYNC" << &t << dendl;
       tracepoint(objectstore, startsync_enter, osr_name);
       _start_sync();
       tracepoint(objectstore, startsync_exit);
       break;
 
     case Transaction::OP_COLL_RENAME:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_COLL_RENAME" << &t << dendl;
       {
         r = -EOPNOTSUPP;
       }
       break;
 
     case Transaction::OP_OMAP_CLEAR:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_OMAP_CLEAR" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         tracepoint(objectstore, omap_clear_enter, osr_name);
         r = _omap_clear(cid, oid, spos);
         tracepoint(objectstore, omap_clear_exit, r);
       }
       break;
+
     case Transaction::OP_OMAP_SETKEYS:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_OMAP_SETKEYS" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         map<string, bufferlist> aset;
         i.decode_attrset(aset);
         tracepoint(objectstore, omap_setkeys_enter, osr_name);
@@ -2759,11 +2867,13 @@ void FileStore::_do_transaction(
         tracepoint(objectstore, omap_setkeys_exit, r);
       }
       break;
+
     case Transaction::OP_OMAP_RMKEYS:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_OMAP_RMKEYS" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         set<string> keys;
         i.decode_keyset(keys);
         tracepoint(objectstore, omap_rmkeys_enter, osr_name);
@@ -2771,11 +2881,13 @@ void FileStore::_do_transaction(
         tracepoint(objectstore, omap_rmkeys_exit, r);
       }
       break;
+
     case Transaction::OP_OMAP_RMKEYRANGE:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_OMAP_RMKEYRANGE" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         string first, last;
         first = i.decode_string();
         last = i.decode_string();
@@ -2784,11 +2896,13 @@ void FileStore::_do_transaction(
         tracepoint(objectstore, omap_rmkeyrange_exit, r);
       }
       break;
+
     case Transaction::OP_OMAP_SETHEADER:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_OMAP_SETHEADER" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         bufferlist bl;
         i.decode_bl(bl);
         tracepoint(objectstore, omap_setheader_enter, osr_name);
@@ -2796,12 +2910,16 @@ void FileStore::_do_transaction(
         tracepoint(objectstore, omap_setheader_exit, r);
       }
       break;
+
     case Transaction::OP_SPLIT_COLLECTION:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_SPLIT_COLLECTION" << &t << dendl;
       {
-	assert(0 == "not legacy journal; upgrade to firefly first");
+        assert(0 == "not legacy journal; upgrade to firefly first");
       }
       break;
+
     case Transaction::OP_SPLIT_COLLECTION2:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_SPLIT_COLLECTION2" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         uint32_t bits = op->split_bits;
@@ -2814,16 +2932,18 @@ void FileStore::_do_transaction(
       break;
 
     case Transaction::OP_SETALLOCHINT:
+      dout(99) << "YuanguoDbg: FileStore::_do_transaction, Transaction::OP_SETALLOCHINT" << &t << dendl;
       {
         coll_t cid = i.get_cid(op->cid);
         ghobject_t oid = i.get_oid(op->oid);
-	_kludge_temp_object_collection(cid, oid);
+        _kludge_temp_object_collection(cid, oid);
         uint64_t expected_object_size = op->expected_object_size;
         uint64_t expected_write_size = op->expected_write_size;
         tracepoint(objectstore, setallochint_enter, osr_name);
         if (_check_replay_guard(cid, oid, spos) > 0)
-          r = _set_alloc_hint(cid, oid, expected_object_size,
-                              expected_write_size);
+        {
+          r = _set_alloc_hint(cid, oid, expected_object_size, expected_write_size);
+        }
         tracepoint(objectstore, setallochint_exit, r);
       }
       break;
@@ -2833,83 +2953,108 @@ void FileStore::_do_transaction(
       assert(0);
     }
 
-    if (r < 0) {
+    if (r < 0)
+    {
       bool ok = false;
 
       if (r == -ENOENT && !(op->op == Transaction::OP_CLONERANGE ||
-			    op->op == Transaction::OP_CLONE ||
-			    op->op == Transaction::OP_CLONERANGE2 ||
-			    op->op == Transaction::OP_COLL_ADD))
-	// -ENOENT is normally okay
-	// ...including on a replayed OP_RMCOLL with checkpoint mode
-	ok = true;
+            op->op == Transaction::OP_CLONE ||
+            op->op == Transaction::OP_CLONERANGE2 ||
+            op->op == Transaction::OP_COLL_ADD))
+      {
+        // -ENOENT is normally okay
+        // ...including on a replayed OP_RMCOLL with checkpoint mode
+        ok = true;
+      }
+
       if (r == -ENODATA)
-	ok = true;
+      {
+        ok = true;
+      }
 
       if (op->op == Transaction::OP_SETALLOCHINT)
+      {
         // Either EOPNOTSUPP or EINVAL most probably.  EINVAL in most
         // cases means invalid hint size (e.g. too big, not a multiple
         // of block size, etc) or, at least on xfs, an attempt to set
         // or change it when the file is not empty.  However,
         // OP_SETALLOCHINT is advisory, so ignore all errors.
         ok = true;
-
-      if (replaying && !backend->can_checkpoint()) {
-	if (r == -EEXIST && op->op == Transaction::OP_MKCOLL) {
-	  dout(10) << "tolerating EEXIST during journal replay since checkpoint is not enabled" << dendl;
-	  ok = true;
-	}
-	if (r == -EEXIST && op->op == Transaction::OP_COLL_ADD) {
-	  dout(10) << "tolerating EEXIST during journal replay since checkpoint is not enabled" << dendl;
-	  ok = true;
-	}
-	if (r == -EEXIST && op->op == Transaction::OP_COLL_MOVE) {
-	  dout(10) << "tolerating EEXIST during journal replay since checkpoint is not enabled" << dendl;
-	  ok = true;
-	}
-	if (r == -ERANGE) {
-	  dout(10) << "tolerating ERANGE on replay" << dendl;
-	  ok = true;
-	}
-	if (r == -ENOENT) {
-	  dout(10) << "tolerating ENOENT on replay" << dendl;
-	  ok = true;
-	}
       }
 
-      if (!ok) {
-	const char *msg = "unexpected error code";
+      if (replaying && !backend->can_checkpoint())
+      {
+        if (r == -EEXIST && op->op == Transaction::OP_MKCOLL)
+        {
+          dout(10) << "tolerating EEXIST during journal replay since checkpoint is not enabled" << dendl;
+          ok = true;
+        }
 
-	if (r == -ENOENT && (op->op == Transaction::OP_CLONERANGE ||
-			     op->op == Transaction::OP_CLONE ||
-			     op->op == Transaction::OP_CLONERANGE2))
-	  msg = "ENOENT on clone suggests osd bug";
+        if (r == -EEXIST && op->op == Transaction::OP_COLL_ADD)
+        {
+          dout(10) << "tolerating EEXIST during journal replay since checkpoint is not enabled" << dendl;
+          ok = true;
+        }
 
-	if (r == -ENOSPC)
-	  // For now, if we hit _any_ ENOSPC, crash, before we do any damage
-	  // by partially applying transactions.
-	  msg = "ENOSPC handling not implemented";
+        if (r == -EEXIST && op->op == Transaction::OP_COLL_MOVE)
+        {
+          dout(10) << "tolerating EEXIST during journal replay since checkpoint is not enabled" << dendl;
+          ok = true;
+        }
 
-	if (r == -ENOTEMPTY) {
-	  msg = "ENOTEMPTY suggests garbage data in osd data dir";
-	}
+        if (r == -ERANGE)
+        {
+          dout(10) << "tolerating ERANGE on replay" << dendl;
+          ok = true;
+        }
 
-	dout(0) << " error " << cpp_strerror(r) << " not handled on operation " << op
-		<< " (" << spos << ", or op " << spos.op << ", counting from 0)" << dendl;
-	dout(0) << msg << dendl;
-	dout(0) << " transaction dump:\n";
-	JSONFormatter f(true);
-	f.open_object_section("transaction");
-	t.dump(&f);
-	f.close_section();
-	f.flush(*_dout);
-	*_dout << dendl;
+        if (r == -ENOENT)
+        {
+          dout(10) << "tolerating ENOENT on replay" << dendl;
+          ok = true;
+        }
+      }
 
-	if (r == -EMFILE) {
-	  dump_open_fds(g_ceph_context);
-	}
+      if (!ok)
+      {
+        const char *msg = "unexpected error code";
 
-	assert(0 == "unexpected error");
+        if (r == -ENOENT && (op->op == Transaction::OP_CLONERANGE ||
+              op->op == Transaction::OP_CLONE ||
+              op->op == Transaction::OP_CLONERANGE2))
+        {
+          msg = "ENOENT on clone suggests osd bug";
+        }
+
+        if (r == -ENOSPC)
+        {
+          // For now, if we hit _any_ ENOSPC, crash, before we do any damage
+          // by partially applying transactions.
+          msg = "ENOSPC handling not implemented";
+        }
+
+        if (r == -ENOTEMPTY)
+        {
+          msg = "ENOTEMPTY suggests garbage data in osd data dir";
+        }
+
+        dout(0) << " error " << cpp_strerror(r) << " not handled on operation " << op << " (" << spos << ", or op " << spos.op << ", counting from 0)" << dendl;
+        dout(0) << msg << dendl;
+        dout(0) << " transaction dump:\n";
+
+        JSONFormatter f(true);
+        f.open_object_section("transaction");
+        t.dump(&f);
+        f.close_section();
+        f.flush(*_dout);
+        *_dout << dendl;
+
+        if (r == -EMFILE)
+        {
+          dump_open_fds(g_ceph_context);
+        }
+
+        assert(0 == "unexpected error");
       }
     }
 
@@ -3678,37 +3823,47 @@ private:
 void FileStore::sync_entry()
 {
   lock.Lock();
-  while (!stop) {
+  while (!stop)
+  {
     utime_t max_interval;
     max_interval.set_from_double(m_filestore_max_sync_interval);
     utime_t min_interval;
     min_interval.set_from_double(m_filestore_min_sync_interval);
 
     utime_t startwait = ceph_clock_now(g_ceph_context);
-    if (!force_sync) {
+    if (!force_sync)
+    {
       dout(20) << "sync_entry waiting for max_interval " << max_interval << dendl;
       sync_cond.WaitInterval(g_ceph_context, lock, max_interval);
-    } else {
+    }
+    else
+    {
       dout(20) << "sync_entry not waiting, force_sync set" << dendl;
     }
 
-    if (force_sync) {
+    if (force_sync)
+    {
       dout(20) << "sync_entry force_sync set" << dendl;
       force_sync = false;
-    } else if (stop) {
+    }
+    else if (stop)
+    {
       dout(20) << __func__ << " stop set" << dendl;
       break;
-    } else {
+    }
+    else
+    {
       // wait for at least the min interval
       utime_t woke = ceph_clock_now(g_ceph_context);
       woke -= startwait;
       dout(20) << "sync_entry woke after " << woke << dendl;
-      if (woke < min_interval) {
-	utime_t t = min_interval;
-	t -= woke;
-	dout(20) << "sync_entry waiting for another " << t
-		 << " to reach min interval " << min_interval << dendl;
-	sync_cond.WaitInterval(g_ceph_context, lock, t);
+
+      if (woke < min_interval)
+      {
+        utime_t t = min_interval;
+        t -= woke;
+        dout(20) << "sync_entry waiting for another " << t << " to reach min interval " << min_interval << dendl;
+        sync_cond.WaitInterval(g_ceph_context, lock, t);
       }
     }
 
@@ -3718,13 +3873,14 @@ void FileStore::sync_entry()
     lock.Unlock();
 
     op_tp.pause();
-    if (apply_manager.commit_start()) {
+
+    if (apply_manager.commit_start())
+    {
       utime_t start = ceph_clock_now(g_ceph_context);
       uint64_t cp = apply_manager.get_committing_seq();
 
       sync_entry_timeo_lock.Lock();
-      SyncEntryTimeout *sync_entry_timeo =
-	new SyncEntryTimeout(m_filestore_commit_timeout);
+      SyncEntryTimeout *sync_entry_timeo = new SyncEntryTimeout(m_filestore_commit_timeout);
       timer.add_event_after(m_filestore_commit_timeout, sync_entry_timeo);
       sync_entry_timeo_lock.Unlock();
 
@@ -3732,68 +3888,85 @@ void FileStore::sync_entry()
 
       dout(15) << "sync_entry committing " << cp << dendl;
       stringstream errstream;
-      if (g_conf->filestore_debug_omap_check && !object_map->check(errstream)) {
-	derr << errstream.str() << dendl;
-	assert(0);
+      if (g_conf->filestore_debug_omap_check && !object_map->check(errstream))
+      {
+        derr << errstream.str() << dendl;
+        assert(0);
       }
 
-      if (backend->can_checkpoint()) {
-	int err = write_op_seq(op_fd, cp);
-	if (err < 0) {
-	  derr << "Error during write_op_seq: " << cpp_strerror(err) << dendl;
-	  assert(0 == "error during write_op_seq");
-	}
-
-	char s[NAME_MAX];
-	snprintf(s, sizeof(s), COMMIT_SNAP_ITEM, (long long unsigned)cp);
-	uint64_t cid = 0;
-	err = backend->create_checkpoint(s, &cid);
-	if (err < 0) {
-	    int err = errno;
-	    derr << "snap create '" << s << "' got error " << err << dendl;
-	    assert(err == 0);
-	}
-
-	snaps.push_back(cp);
-	apply_manager.commit_started();
-	op_tp.unpause();
-
-	if (cid > 0) {
-	  dout(20) << " waiting for checkpoint " << cid << " to complete" << dendl;
-	  err = backend->sync_checkpoint(cid);
-	  if (err < 0) {
-	    derr << "ioctl WAIT_SYNC got " << cpp_strerror(err) << dendl;
-	    assert(0 == "wait_sync got error");
-	  }
-	  dout(20) << " done waiting for checkpoint" << cid << " to complete" << dendl;
-	}
-      } else
+      if (backend->can_checkpoint())
       {
-	apply_manager.commit_started();
-	op_tp.unpause();
+        dout(99) << "YuanguoDbg: FileStore::sync_entry, backend can checkpoint" << dendl;
 
-	int err = object_map->sync();
-	if (err < 0) {
-	  derr << "object_map sync got " << cpp_strerror(err) << dendl;
-	  assert(0 == "object_map sync returned error");
-	}
+        int err = write_op_seq(op_fd, cp);
+        if (err < 0)
+        {
+          derr << "Error during write_op_seq: " << cpp_strerror(err) << dendl;
+          assert(0 == "error during write_op_seq");
+        }
 
-	err = backend->syncfs();
-	if (err < 0) {
-	  derr << "syncfs got " << cpp_strerror(err) << dendl;
-	  assert(0 == "syncfs returned error");
-	}
+        char s[NAME_MAX];
+        snprintf(s, sizeof(s), COMMIT_SNAP_ITEM, (long long unsigned)cp);
 
-	err = write_op_seq(op_fd, cp);
-	if (err < 0) {
-	  derr << "Error during write_op_seq: " << cpp_strerror(err) << dendl;
-	  assert(0 == "error during write_op_seq");
-	}
-	err = ::fsync(op_fd);
-	if (err < 0) {
-	  derr << "Error during fsync of op_seq: " << cpp_strerror(err) << dendl;
-	  assert(0 == "error during fsync of op_seq");
-	}
+        uint64_t cid = 0;
+        err = backend->create_checkpoint(s, &cid);
+        if (err < 0)
+        {
+          int err = errno;
+          derr << "snap create '" << s << "' got error " << err << dendl;
+          assert(err == 0);
+        }
+
+        snaps.push_back(cp);
+        apply_manager.commit_started();
+        op_tp.unpause();
+
+        if (cid > 0)
+        {
+          dout(20) << " waiting for checkpoint " << cid << " to complete" << dendl;
+          err = backend->sync_checkpoint(cid);
+          if (err < 0)
+          {
+            derr << "ioctl WAIT_SYNC got " << cpp_strerror(err) << dendl;
+            assert(0 == "wait_sync got error");
+          }
+          dout(20) << " done waiting for checkpoint" << cid << " to complete" << dendl;
+        }
+      }
+      else
+      {
+        dout(99) << "YuanguoDbg: FileStore::sync_entry, backend cannot checkpoint" << dendl;
+
+        apply_manager.commit_started();
+        op_tp.unpause();
+
+        int err = object_map->sync();
+        if (err < 0)
+        {
+          derr << "object_map sync got " << cpp_strerror(err) << dendl;
+          assert(0 == "object_map sync returned error");
+        }
+
+        err = backend->syncfs();
+        if (err < 0)
+        {
+          derr << "syncfs got " << cpp_strerror(err) << dendl;
+          assert(0 == "syncfs returned error");
+        }
+
+        err = write_op_seq(op_fd, cp);
+        if (err < 0)
+        {
+          derr << "Error during write_op_seq: " << cpp_strerror(err) << dendl;
+          assert(0 == "error during write_op_seq");
+        }
+
+        err = ::fsync(op_fd);
+        if (err < 0)
+        {
+          derr << "Error during fsync of op_seq: " << cpp_strerror(err) << dendl;
+          assert(0 == "error during fsync of op_seq");
+        }
       }
 
       utime_t done = ceph_clock_now(g_ceph_context);
@@ -3806,25 +3979,29 @@ void FileStore::sync_entry()
       logger->tinc(l_os_commit_len, dur);
 
       apply_manager.commit_finish();
-      if (!m_disable_wbthrottle) {
+      if (!m_disable_wbthrottle)
+      {
         wbthrottle.clear();
       }
 
       logger->set(l_os_committing, 0);
 
       // remove old snaps?
-      if (backend->can_checkpoint()) {
-	char s[NAME_MAX];
-	while (snaps.size() > 2) {
-	  snprintf(s, sizeof(s), COMMIT_SNAP_ITEM, (long long unsigned)snaps.front());
-	  snaps.pop_front();
-	  dout(10) << "removing snap '" << s << "'" << dendl;
-	  int r = backend->destroy_checkpoint(s);
-	  if (r) {
-	    int err = errno;
-	    derr << "unable to destroy snap '" << s << "' got " << cpp_strerror(err) << dendl;
-	  }
-	}
+      if (backend->can_checkpoint())
+      {
+        char s[NAME_MAX];
+        while (snaps.size() > 2)
+        {
+          snprintf(s, sizeof(s), COMMIT_SNAP_ITEM, (long long unsigned)snaps.front());
+          snaps.pop_front();
+          dout(10) << "removing snap '" << s << "'" << dendl;
+          int r = backend->destroy_checkpoint(s);
+          if (r)
+          {
+            int err = errno;
+            derr << "unable to destroy snap '" << s << "' got " << cpp_strerror(err) << dendl;
+          }
+        }
       }
 
       dout(15) << "sync_entry committed to op_seq " << cp << dendl;
@@ -3832,22 +4009,28 @@ void FileStore::sync_entry()
       sync_entry_timeo_lock.Lock();
       timer.cancel_event(sync_entry_timeo);
       sync_entry_timeo_lock.Unlock();
-    } else {
+    }
+    else
+    {
       op_tp.unpause();
     }
 
     lock.Lock();
     finish_contexts(g_ceph_context, fin, 0);
     fin.clear();
-    if (!sync_waiters.empty()) {
+    if (!sync_waiters.empty())
+    {
       dout(10) << "sync_entry more waiters, committing again" << dendl;
       goto again;
     }
-    if (!stop && journal && journal->should_commit_now()) {
+
+    if (!stop && journal && journal->should_commit_now())
+    {
       dout(10) << "sync_entry journal says we should commit again (probably is/was full)" << dendl;
       goto again;
     }
   }
+
   stop = false;
   lock.Unlock();
 }

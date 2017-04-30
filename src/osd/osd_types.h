@@ -85,21 +85,37 @@ string ceph_osd_flag_string(unsigned flags);
 /// conver CEPH_OSD_OP_FLAG_* op flags to a string
 string ceph_osd_op_flag_string(unsigned flags);
 
-struct pg_shard_t {
+struct pg_shard_t
+{
   int32_t osd;
   shard_id_t shard;
-  pg_shard_t() : osd(-1), shard(shard_id_t::NO_SHARD) {}
-  explicit pg_shard_t(int osd) : osd(osd), shard(shard_id_t::NO_SHARD) {}
-  pg_shard_t(int osd, shard_id_t shard) : osd(osd), shard(shard) {}
-  static pg_shard_t undefined_shard() {
+
+  pg_shard_t() : osd(-1), shard(shard_id_t::NO_SHARD)
+  {
+  }
+
+  explicit pg_shard_t(int osd) : osd(osd), shard(shard_id_t::NO_SHARD)
+  {
+  }
+
+  pg_shard_t(int osd, shard_id_t shard) : osd(osd), shard(shard)
+  {
+  }
+
+  static pg_shard_t undefined_shard()
+  {
     return pg_shard_t(-1, shard_id_t::NO_SHARD);
   }
-  bool is_undefined() const {
+
+  bool is_undefined() const
+  {
     return osd == -1;
   }
+
   void encode(bufferlist &bl) const;
   void decode(bufferlist::iterator &bl);
 };
+
 WRITE_CLASS_ENCODER(pg_shard_t)
 WRITE_EQ_OPERATORS_2(pg_shard_t, osd, shard)
 WRITE_CMP_OPERATORS_2(pg_shard_t, osd, shard)
@@ -3977,33 +3993,43 @@ inline ostream& operator<<(ostream& out, const ObjectContext& obc)
 
 ostream& operator<<(ostream& out, const object_info_t& oi);
 
-class ObcLockManager {
-  struct ObjectLockState {
+class ObcLockManager
+{
+  struct ObjectLockState
+  {
     ObjectContextRef obc;
     ObjectContext::RWState::State type;
-    ObjectLockState(
-      ObjectContextRef obc,
-      ObjectContext::RWState::State type)
-      : obc(obc), type(type) {}
+
+    ObjectLockState(ObjectContextRef obc, ObjectContext::RWState::State type) : obc(obc), type(type)
+    {}
   };
+
   map<hobject_t, ObjectLockState, hobject_t::BitwiseComparator> locks;
+
 public:
   ObcLockManager() = default;
   ObcLockManager(ObcLockManager &&) = default;
   ObcLockManager(const ObcLockManager &) = delete;
-  bool empty() const {
+
+  bool empty() const
+  {
     return locks.empty();
   }
+
   bool get_lock_type(
     ObjectContext::RWState::State type,
     const hobject_t &hoid,
     ObjectContextRef obc,
-    OpRequestRef op) {
+    OpRequestRef op)
+  {
     assert(locks.find(hoid) == locks.end());
-    if (obc->get_lock_type(op, type)) {
+    if (obc->get_lock_type(op, type))
+    {
       locks.insert(make_pair(hoid, ObjectLockState(obc, type)));
       return true;
-    } else {
+    }
+    else
+    {
       return false;
     }
   }
@@ -4053,23 +4079,21 @@ public:
   void put_locks(
     list<pair<hobject_t, list<OpRequestRef> > > *to_requeue,
     bool *requeue_recovery,
-    bool *requeue_snaptrimmer) {
-    for (auto p: locks) {
+    bool *requeue_snaptrimmer)
+  {
+    for (auto p: locks)
+    {
       list<OpRequestRef> _to_requeue;
-      p.second.obc->put_lock_type(
-	p.second.type,
-	&_to_requeue,
-	requeue_recovery,
-	requeue_snaptrimmer);
-      if (to_requeue) {
-	to_requeue->push_back(
-	  make_pair(
-	    p.second.obc->obs.oi.soid,
-	    std::move(_to_requeue)));
+      p.second.obc->put_lock_type(p.second.type, &_to_requeue, requeue_recovery, requeue_snaptrimmer);
+      if (to_requeue)
+      {
+        to_requeue->push_back(make_pair(p.second.obc->obs.oi.soid, std::move(_to_requeue)));
       }
     }
+
     locks.clear();
   }
+
   ~ObcLockManager() {
     assert(locks.empty());
   }

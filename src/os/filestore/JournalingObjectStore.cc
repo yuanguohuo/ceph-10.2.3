@@ -254,14 +254,21 @@ void JournalingObjectStore::_op_journal_transactions(
   Context *onjournal, TrackedOpRef osd_op)
 {
   if (osd_op.get())
+  {
     dout(10) << "op_journal_transactions " << op << " reqid_t "
              << (static_cast<OpRequest *>(osd_op.get()))->get_reqid() << dendl;
+  }
   else
+  {
     dout(10) << "op_journal_transactions " << op  << dendl;
+  }
 
-  if (journal && journal->is_writeable()) {
+  if (journal && journal->is_writeable())
+  {
     journal->submit_entry(op, tbl, orig_len, onjournal, osd_op);
-  } else if (onjournal) {
+  }
+  else if (onjournal)
+  {
     apply_manager.add_waiter(op, onjournal);
   }
 }

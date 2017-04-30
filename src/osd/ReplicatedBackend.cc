@@ -529,13 +529,19 @@ public:
   }
 };
 
-class C_OSD_OnOpApplied : public Context {
+class C_OSD_OnOpApplied : public Context
+{
   ReplicatedBackend *pg;
   ReplicatedBackend::InProgressOp *op;
+
 public:
   C_OSD_OnOpApplied(ReplicatedBackend *pg, ReplicatedBackend::InProgressOp *op) 
-    : pg(pg), op(op) {}
-  void finish(int) {
+    : pg(pg), op(op)
+  {
+  }
+
+  void finish(int)
+  {
     pg->op_applied(op);
   }
 };
@@ -555,8 +561,7 @@ void ReplicatedBackend::submit_transaction(
   osd_reqid_t reqid,
   OpRequestRef orig_op)
 {
-  std::unique_ptr<RPGTransaction> t(
-    static_cast<RPGTransaction*>(_t.release()));
+  std::unique_ptr<RPGTransaction> t(static_cast<RPGTransaction*>(_t.release()));
   assert(t);
   ObjectStore::Transaction op_t = t->get_transaction();
 
@@ -564,22 +569,10 @@ void ReplicatedBackend::submit_transaction(
   assert(t->get_temp_cleared().size() <= 1);
 
   assert(!in_progress_ops.count(tid));
-  InProgressOp &op = in_progress_ops.insert(
-    make_pair(
-      tid,
-      InProgressOp(
-	tid, on_all_commit, on_all_acked,
-	orig_op, at_version)
-      )
-    ).first->second;
+  InProgressOp &op = in_progress_ops.insert(make_pair(tid, InProgressOp(tid, on_all_commit, on_all_acked, orig_op, at_version))).first->second;
 
-  op.waiting_for_applied.insert(
-    parent->get_actingbackfill_shards().begin(),
-    parent->get_actingbackfill_shards().end());
-  op.waiting_for_commit.insert(
-    parent->get_actingbackfill_shards().begin(),
-    parent->get_actingbackfill_shards().end());
-
+  op.waiting_for_applied.insert(parent->get_actingbackfill_shards().begin(), parent->get_actingbackfill_shards().end());
+  op.waiting_for_commit.insert(parent->get_actingbackfill_shards().begin(), parent->get_actingbackfill_shards().end());
 
   issue_op(
     soid,
@@ -589,16 +582,17 @@ void ReplicatedBackend::submit_transaction(
     trim_to,
     trim_rollback_to,
     t->get_temp_added().empty() ? hobject_t() : *(t->get_temp_added().begin()),
-    t->get_temp_cleared().empty() ?
-      hobject_t() : *(t->get_temp_cleared().begin()),
+    t->get_temp_cleared().empty() ? hobject_t() : *(t->get_temp_cleared().begin()),
     log_entries,
     hset_history,
     &op,
     op_t);
 
-  if (!(t->get_temp_added().empty())) {
+  if (!(t->get_temp_added().empty()))
+  {
     add_temp_objs(t->get_temp_added());
   }
+
   clear_temp_objs(t->get_temp_cleared());
 
   parent->log_operation(
@@ -609,13 +603,23 @@ void ReplicatedBackend::submit_transaction(
     true,
     op_t);
   
+  //Yuanguo: the on_local_applied_sync callback is called at FileStore::_finish_op()
+  // it is to unlock the "ondisk write lock", see ReplicatedPG::issue_repop
   op_t.register_on_applied_sync(on_local_applied_sync);
-  op_t.register_on_applied(
-    parent->bless_context(
-      new C_OSD_OnOpApplied(this, &op)));
-  op_t.register_on_commit(
-    parent->bless_context(
-      new C_OSD_OnOpCommit(this, &op)));
+
+  //Yuanguo: this callback is called at FileStore::_finish_op() also, right after where 
+  //on_local_applied_sync is called, but it's put in a queue/finisher and called by another thread;
+  op_t.register_on_applied(parent->bless_context(new C_OSD_OnOpApplied(this, &op)));
+
+  //Yuanguo: this callback is called at 
+  //     C_JournaledAhead::finish() -->
+  //     FileStore::_journaled_ahead
+  // where the transaction has been written and synced into journal; See
+  //     FileJournal::submit_entry               //put into journal 'writeq' and 'completions' (completion queue)
+  //     FileJournal::write_thread_entry  -->   //entry of journal writer thread
+  //     FileJournal::do_write  -->     //write (direct io) OR write + sync
+  //     FileJournal::queue_completions_thru   // put the C_JournaledAhead obj into a queue/finisher;
+  op_t.register_on_commit(parent->bless_context(new C_OSD_OnOpCommit(this, &op)));
 
   vector<ObjectStore::Transaction> tls;
   tls.push_back(std::move(op_t));
@@ -623,21 +627,25 @@ void ReplicatedBackend::submit_transaction(
   parent->queue_transactions(tls, op.op);
 }
 
-void ReplicatedBackend::op_applied(
-  InProgressOp *op)
+void ReplicatedBackend::op_applied(InProgressOp *op)
 {
   dout(10) << __func__ << ": " << op->tid << dendl;
   if (op->op)
+  {
     op->op->mark_event("op_applied");
+  }
 
   op->waiting_for_applied.erase(get_parent()->whoami_shard());
   parent->op_applied(op->v);
 
-  if (op->waiting_for_applied.empty()) {
+  if (op->waiting_for_applied.empty())
+  {
     op->on_applied->complete(0);
     op->on_applied = 0;
   }
-  if (op->done()) {
+
+  if(op->done())
+  {
     assert(!op->on_commit && !op->on_applied);
     in_progress_ops.erase(op->tid);
   }
@@ -1000,7 +1008,8 @@ Message * ReplicatedBackend::generate_subop(
     tid, at_version);
 
   // ship resulting transaction, log entries, and pg_stats
-  if (!parent->should_send_op(peer, soid)) {
+  if (!parent->should_send_op(peer, soid))
+  {
     dout(10) << "issue_repop shipping empty opt to osd." << peer
 	     <<", object " << soid
 	     << " beyond MAX(last_backfill_started "
@@ -1008,7 +1017,9 @@ Message * ReplicatedBackend::generate_subop(
 	     << pinfo.last_backfill << ")" << dendl;
     ObjectStore::Transaction t;
     ::encode(t, wr->get_data());
-  } else {
+  }
+  else
+  {
     ::encode(op_t, wr->get_data());
   }
 
@@ -1028,6 +1039,7 @@ Message * ReplicatedBackend::generate_subop(
   return wr;
 }
 
+//Yuanguo: send the op to replica osds;
 void ReplicatedBackend::issue_op(
   const hobject_t &soid,
   const eversion_t &at_version,
@@ -1043,19 +1055,28 @@ void ReplicatedBackend::issue_op(
   ObjectStore::Transaction &op_t)
 {
 
-  if (parent->get_actingbackfill_shards().size() > 1) {
+  if (parent->get_actingbackfill_shards().size() > 1)
+  {
     ostringstream ss;
     set<pg_shard_t> replicas = parent->get_actingbackfill_shards();
     replicas.erase(parent->whoami_shard());
     ss << "waiting for subops from " << replicas;
     if (op->op)
+    {
       op->op->mark_sub_op_sent(ss.str());
+    }
   }
-  for (set<pg_shard_t>::const_iterator i =
-	 parent->get_actingbackfill_shards().begin();
-       i != parent->get_actingbackfill_shards().end();
-       ++i) {
-    if (*i == parent->whoami_shard()) continue;
+
+  for (set<pg_shard_t>::const_iterator i = parent->get_actingbackfill_shards().begin(); i != parent->get_actingbackfill_shards().end(); ++i)
+  {
+    //Yuanguo: the osd is myself!
+    if (*i == parent->whoami_shard())
+    {
+      continue;
+    }
+
+    //Yuanguo: send to peer (a replica osd)
+    
     pg_shard_t peer = *i;
     const pg_info_t &pinfo = parent->get_shard_info().find(peer)->second;
 
@@ -1076,8 +1097,7 @@ void ReplicatedBackend::issue_op(
       peer,
       pinfo);
 
-    get_parent()->send_message_osd_cluster(
-      peer.osd, wr, get_osdmap()->get_epoch());
+    get_parent()->send_message_osd_cluster(peer.osd, wr, get_osdmap()->get_epoch());
   }
 }
 

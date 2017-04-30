@@ -349,44 +349,61 @@ private:
   vector<Finisher*> apply_finishers;
 
   ThreadPool op_tp;
-  struct OpWQ : public ThreadPool::WorkQueue<OpSequencer> {
+  struct OpWQ : public ThreadPool::WorkQueue<OpSequencer>
+  {
     FileStore *store;
     OpWQ(FileStore *fs, time_t timeout, time_t suicide_timeout, ThreadPool *tp)
-      : ThreadPool::WorkQueue<OpSequencer>("FileStore::OpWQ", timeout, suicide_timeout, tp), store(fs) {}
+      : ThreadPool::WorkQueue<OpSequencer>("FileStore::OpWQ", timeout, suicide_timeout, tp), store(fs)
+    {
+    }
 
-    bool _enqueue(OpSequencer *osr) {
+    bool _enqueue(OpSequencer *osr)
+    {
       store->op_queue.push_back(osr);
       return true;
     }
-    void _dequeue(OpSequencer *o) {
+
+    void _dequeue(OpSequencer *o)
+    {
       assert(0);
     }
-    bool _empty() {
+
+    bool _empty()
+    {
       return store->op_queue.empty();
     }
-    OpSequencer *_dequeue() {
+
+    OpSequencer *_dequeue()
+    {
       if (store->op_queue.empty())
-	return NULL;
+        return NULL;
+
       OpSequencer *osr = store->op_queue.front();
       store->op_queue.pop_front();
       return osr;
     }
-    void _process(OpSequencer *osr, ThreadPool::TPHandle &handle) override {
+
+    void _process(OpSequencer *osr, ThreadPool::TPHandle &handle) override
+    {
       store->_do_op(osr, handle);
     }
-    void _process_finish(OpSequencer *osr) {
+
+    void _process_finish(OpSequencer *osr)
+    {
       store->_finish_op(osr);
     }
-    void _clear() {
+
+    void _clear()
+    {
       assert(store->op_queue.empty());
     }
   } op_wq;
 
   void _do_op(OpSequencer *o, ThreadPool::TPHandle &handle);
   void _finish_op(OpSequencer *o);
-  Op *build_op(vector<Transaction>& tls,
-	       Context *onreadable, Context *onreadable_sync,
-	       TrackedOpRef osd_op);
+
+  Op *build_op(vector<Transaction>& tls, Context *onreadable, Context *onreadable_sync, TrackedOpRef osd_op);
+
   void queue_op(OpSequencer *osr, Op *o);
   void op_queue_reserve_throttle(Op *o);
   void op_queue_release_throttle(Op *o);

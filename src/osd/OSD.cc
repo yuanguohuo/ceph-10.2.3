@@ -1363,8 +1363,7 @@ void OSDService::reply_op_error(OpRequestRef op, int err)
   reply_op_error(op, err, eversion_t(), 0);
 }
 
-void OSDService::reply_op_error(OpRequestRef op, int err, eversion_t v,
-                                version_t uv)
+void OSDService::reply_op_error(OpRequestRef op, int err, eversion_t v, version_t uv)
 {
   MOSDOp *m = static_cast<MOSDOp*>(op->get_req());
   assert(m->get_type() == CEPH_MSG_OSD_OP);
@@ -8630,37 +8629,42 @@ void OSD::enqueue_op(PG *pg, OpRequestRef& op)
   pg->queue_op(op);
 }
 
-void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb ) {
-
+void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb )
+{
   uint32_t shard_index = thread_index % num_shards;
 
   ShardData* sdata = shard_list[shard_index];
   assert(NULL != sdata);
   sdata->sdata_op_ordering_lock.Lock();
-  if (sdata->pqueue->empty()) {
+  if (sdata->pqueue->empty())
+  {
     sdata->sdata_op_ordering_lock.Unlock();
     osd->cct->get_heartbeat_map()->reset_timeout(hb, 4, 0);
     sdata->sdata_lock.Lock();
     sdata->sdata_cond.WaitInterval(osd->cct, sdata->sdata_lock, utime_t(2, 0));
     sdata->sdata_lock.Unlock();
     sdata->sdata_op_ordering_lock.Lock();
-    if(sdata->pqueue->empty()) {
+    if(sdata->pqueue->empty())
+    {
       sdata->sdata_op_ordering_lock.Unlock();
       return;
     }
   }
+
   pair<PGRef, PGQueueable> item = sdata->pqueue->dequeue();
   sdata->pg_for_processing[&*(item.first)].push_back(item.second);
   sdata->sdata_op_ordering_lock.Unlock();
-  ThreadPool::TPHandle tp_handle(osd->cct, hb, timeout_interval,
-    suicide_interval);
+
+  ThreadPool::TPHandle tp_handle(osd->cct, hb, timeout_interval, suicide_interval);
 
   (item.first)->lock_suspend_timeout(tp_handle);
 
   boost::optional<PGQueueable> op;
+
   {
     Mutex::Locker l(sdata->sdata_op_ordering_lock);
-    if (!sdata->pg_for_processing.count(&*(item.first))) {
+    if (!sdata->pg_for_processing.count(&*(item.first)))
+    {
       (item.first)->unlock();
       return;
     }
@@ -8668,7 +8672,9 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb ) 
     op = sdata->pg_for_processing[&*(item.first)].front();
     sdata->pg_for_processing[&*(item.first)].pop_front();
     if (!(sdata->pg_for_processing[&*(item.first)].size()))
+    {
       sdata->pg_for_processing.erase(&*(item.first));
+    }
   }
 
   // osd:opwq_process marks the point at which an operation has been dequeued
@@ -8676,12 +8682,12 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb ) 
   {
 #ifdef WITH_LTTNG
     osd_reqid_t reqid;
-    if (boost::optional<OpRequestRef> _op = op->maybe_get_op()) {
+    if (boost::optional<OpRequestRef> _op = op->maybe_get_op())
+    {
       reqid = (*_op)->get_reqid();
     }
 #endif
-    tracepoint(osd, opwq_process_start, reqid.name._type,
-        reqid.name._num, reqid.tid, reqid.inc);
+    tracepoint(osd, opwq_process_start, reqid.name._type, reqid.name._num, reqid.tid, reqid.inc);
   }
 
   lgeneric_subdout(osd->cct, osd, 30) << "dequeue status: ";
@@ -8698,12 +8704,12 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb ) 
   {
 #ifdef WITH_LTTNG
     osd_reqid_t reqid;
-    if (boost::optional<OpRequestRef> _op = op->maybe_get_op()) {
+    if (boost::optional<OpRequestRef> _op = op->maybe_get_op())
+    {
       reqid = (*_op)->get_reqid();
     }
 #endif
-    tracepoint(osd, opwq_process_finish, reqid.name._type,
-        reqid.name._num, reqid.tid, reqid.inc);
+    tracepoint(osd, opwq_process_finish, reqid.name._type, reqid.name._num, reqid.tid, reqid.inc);
   }
 
   (item.first)->unlock();
@@ -8775,34 +8781,43 @@ void OSD::dequeue_op(
   utime_t now = ceph_clock_now(cct);
   op->set_dequeued_time(now);
   utime_t latency = now - op->get_req()->get_recv_stamp();
+
   dout(10) << "dequeue_op " << op << " prio " << op->get_req()->get_priority()
-	   << " cost " << op->get_req()->get_cost()
-	   << " latency " << latency
-	   << " " << *(op->get_req())
-	   << " pg " << *pg << dendl;
+	         << " cost " << op->get_req()->get_cost()
+	         << " latency " << latency
+	         << " " << *(op->get_req())
+	         << " pg " << *pg << dendl;
 
   // share our map with sender, if they're old
-  if (op->send_map_update) {
+  if (op->send_map_update)
+  {
     Message *m = op->get_req();
     Session *session = static_cast<Session *>(m->get_connection()->get_priv());
     epoch_t last_sent_epoch;
-    if (session) {
+
+    if (session)
+    {
       session->sent_epoch_lock.lock();
       last_sent_epoch = session->last_sent_epoch;
       session->sent_epoch_lock.unlock();
     }
+
     service.share_map(
         m->get_source(),
         m->get_connection().get(),
         op->sent_epoch,
         osdmap,
         session ? &last_sent_epoch : NULL);
-    if (session) {
+
+    if (session)
+    {
       session->sent_epoch_lock.lock();
-      if (session->last_sent_epoch < last_sent_epoch) {
-	session->last_sent_epoch = last_sent_epoch;
+      if (session->last_sent_epoch < last_sent_epoch)
+      {
+        session->last_sent_epoch = last_sent_epoch;
       }
       session->sent_epoch_lock.unlock();
+
       session->put();
     }
   }
@@ -9064,7 +9079,8 @@ int OSD::init_op_flags(OpRequestRef& op)
   MOSDOp *m = static_cast<MOSDOp*>(op->get_req());
   vector<OSDOp>::iterator iter;
 
-	dout(99) << "YuanguoDbg: OSD::init_op_flags, reqid=[" << m->get_reqid().name << ", " << m->get_reqid().tid << "] oid=" << m->get_oid() << " pgid=" << m->get_pg() << dendl;
+	dout(99) << "YuanguoDbg: OSD::init_op_flags, reqid=[" << m->get_reqid().name << "," << m->get_reqid().tid << "," << m->get_reqid().inc << "]"
+           << " oid=" << m->get_oid() << " pgid=" << m->get_pg() << dendl;
 
   // client flags have no bearing on whether an op is a read, write, etc.
   op->rmw_flags = 0;
@@ -9072,7 +9088,12 @@ int OSD::init_op_flags(OpRequestRef& op)
   // set bits based on op codes, called methods.
   for (iter = m->ops.begin(); iter != m->ops.end(); ++iter)
   {
-	  dout(99) << "YuanguoDbg: OSD::init_op_flags, OSDOp=" << (*iter) << "[" << iter->op.op << ", " << iter->op.flags << ", " << iter->soid << "]" << dendl;
+    dout(99) << "YuanguoDbg: OSD::init_op_flags, OSDOp=" << (*iter)
+             << " ++++++ {"
+             << " op=[" << iter->op.op << "," << iter->op.flags << "]" //create: 8717 = 0x220D = CEPH_OSD_OP_MODE_WR|CEPH_OSD_OP_TYPE_DATA|13
+             << " soid=" << iter->soid                                 //write : 8705 = 0x2201 = CEPH_OSD_OP_MODE_WR|CEPH_OSD_OP_TYPE_DATA|1
+             << " }" 
+             << dendl;
 
     if (ceph_osd_op_mode_modify(iter->op.op))
       op->set_write();

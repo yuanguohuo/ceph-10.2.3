@@ -981,25 +981,38 @@ void FileJournal::queue_completions_thru(uint64_t seq)
   list<completion_item> items;
   batch_pop_completions(items);
   list<completion_item>::iterator it = items.begin();
-  while (it != items.end()) {
+
+  while (it != items.end())
+  {
     completion_item& next = *it;
     if (next.seq > seq)
       break;
+
     utime_t lat = now;
     lat -= next.start;
     dout(10) << "queue_completions_thru seq " << seq
-	     << " queueing seq " << next.seq
-	     << " " << next.finish
-	     << " lat " << lat << dendl;
-    if (logger) {
+	           << " queueing seq " << next.seq
+	           << " " << next.finish
+	           << " lat " << lat << dendl;
+
+    if (logger)
+    {
       logger->tinc(l_os_j_lat, lat);
     }
+
     if (next.finish)
+    {
       finisher->queue(next.finish);
+    }
+
     if (next.tracked_op)
+    {
       next.tracked_op->mark_event("journaled_completion_queued");
+    }
+
     items.erase(it++);
   }
+
   batch_unpop_completions(items);
   finisher_cond.Signal();
 }
@@ -1093,21 +1106,21 @@ void FileJournal::do_write(bufferlist& bl)
   if (bl.length() == 0 && !must_write_header)
     return;
 
+  //Yuanguo: re-write the journal header at a fixed frequency;
   buffer::ptr hbp;
   if (g_conf->journal_write_header_frequency &&
-      (((++journaled_since_start) %
-	g_conf->journal_write_header_frequency) == 0)) {
+      (((++journaled_since_start) % g_conf->journal_write_header_frequency) == 0))
+  {
     must_write_header = true;
   }
 
-  if (must_write_header) {
+  if (must_write_header)
+  {
     must_write_header = false;
     hbp = prepare_header();
   }
 
-  dout(15) << "do_write writing " << write_pos << "~" << bl.length()
-	   << (hbp.length() ? " + header":"")
-	   << dendl;
+  dout(15) << "do_write writing " << write_pos << "~" << bl.length() << (hbp.length() ? " + header":"") << dendl;
 
   utime_t from = ceph_clock_now(g_ceph_context);
 
@@ -1118,67 +1131,78 @@ void FileJournal::do_write(bufferlist& bl)
   align_bl(pos, bl);
   write_pos += bl.length();
   if (write_pos >= header.max_size)
+  {
     write_pos = write_pos - header.max_size + get_top();
+  }
 
   write_lock.Unlock();
 
   // split?
   off64_t split = 0;
-  if (pos + bl.length() > header.max_size) {
+  if (pos + bl.length() > header.max_size)
+  {
     bufferlist first, second;
     split = header.max_size - pos;
     first.substr_of(bl, 0, split);
     second.substr_of(bl, split, bl.length() - split);
+
     assert(first.length() + second.length() == bl.length());
-    dout(10) << "do_write wrapping, first bit at " << pos << " len " << first.length()
-	     << " second bit len " << second.length() << " (orig len " << bl.length() << ")" << dendl;
+
+    dout(10) << "do_write wrapping, first bit at " << pos << " len " << first.length() << " second bit len " << second.length() << " (orig len " << bl.length() << ")" << dendl;
 
     //Save pos to write first piece second
     off64_t first_pos = pos;
     off64_t orig_pos;
     pos = get_top();
     // header too?
-    if (hbp.length()) {
+    if (hbp.length())
+    {
       // be sneaky: include the header in the second fragment
       second.push_front(hbp);
       pos = 0;          // we included the header
     }
+
     // Write the second portion first possible with the header, so
     // do_read_entry() won't even get a valid entry_header_t if there
     // is a crash between the two writes.
     orig_pos = pos;
-    if (write_bl(pos, second)) {
-      derr << "FileJournal::do_write: write_bl(pos=" << orig_pos
-	   << ") failed" << dendl;
+    if (write_bl(pos, second))
+    {
+      derr << "FileJournal::do_write: write_bl(pos=" << orig_pos << ") failed" << dendl;
       ceph_abort();
     }
+
     orig_pos = first_pos;
-    if (write_bl(first_pos, first)) {
-      derr << "FileJournal::do_write: write_bl(pos=" << orig_pos
-	   << ") failed" << dendl;
+    if (write_bl(first_pos, first))
+    {
+      derr << "FileJournal::do_write: write_bl(pos=" << orig_pos << ") failed" << dendl;
       ceph_abort();
     }
+
     assert(first_pos == get_top());
-  } else {
+  }
+  else
+  {
     // header too?
-    if (hbp.length()) {
-      if (TEMP_FAILURE_RETRY(::pwrite(fd, hbp.c_str(), hbp.length(), 0)) < 0) {
-	int err = errno;
-	derr << "FileJournal::do_write: pwrite(fd=" << fd
-	     << ", hbp.length=" << hbp.length() << ") failed :"
-	     << cpp_strerror(err) << dendl;
-	ceph_abort();
+    if (hbp.length())
+    {
+      if (TEMP_FAILURE_RETRY(::pwrite(fd, hbp.c_str(), hbp.length(), 0)) < 0)
+      {
+        int err = errno;
+        derr << "FileJournal::do_write: pwrite(fd=" << fd << ", hbp.length=" << hbp.length() << ") failed :" << cpp_strerror(err) << dendl;
+        ceph_abort();
       }
     }
 
-    if (write_bl(pos, bl)) {
-      derr << "FileJournal::do_write: write_bl(pos=" << pos
-	   << ") failed" << dendl;
+    if (write_bl(pos, bl))
+    {
+      derr << "FileJournal::do_write: write_bl(pos=" << pos << ") failed" << dendl;
       ceph_abort();
     }
   }
 
-  if (!directio) {
+  if (!directio)
+  {
     dout(20) << "do_write fsync" << dendl;
 
     /*
@@ -1202,13 +1226,16 @@ void FileJournal::do_write(bufferlist& bl)
 #else
     ret = ::fdatasync(fd);
 #endif
-    if (ret < 0) {
+    if (ret < 0)
+    {
       derr << __func__ << " fsync/fdatasync failed: " << cpp_strerror(errno) << dendl;
       ceph_abort();
     }
 #ifdef HAVE_POSIX_FADVISE
     if (g_conf->filestore_fadvise)
+    {
       posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+    }
 #endif
   }
 
@@ -1226,16 +1253,20 @@ void FileJournal::do_write(bufferlist& bl)
 
     // kick finisher?
     //  only if we haven't filled up recently!
-    if (full_state != FULL_NOTFULL) {
-      dout(10) << "do_write NOT queueing finisher seq " << journaled_seq
-	       << ", full_commit_seq|full_restart_seq" << dendl;
-    } else {
-      if (plug_journal_completions) {
-	dout(20) << "do_write NOT queueing finishers through seq " << journaled_seq
-		 << " due to completion plug" << dendl;
-      } else {
-	dout(20) << "do_write queueing finishers through seq " << journaled_seq << dendl;
-	queue_completions_thru(journaled_seq);
+    if (full_state != FULL_NOTFULL)
+    {
+      dout(10) << "do_write NOT queueing finisher seq " << journaled_seq << ", full_commit_seq|full_restart_seq" << dendl;
+    }
+    else
+    {
+      if (plug_journal_completions)
+      {
+        dout(20) << "do_write NOT queueing finishers through seq " << journaled_seq << " due to completion plug" << dendl;
+      }
+      else
+      {
+        dout(20) << "do_write queueing finishers through seq " << journaled_seq << dendl;
+        queue_completions_thru(journaled_seq);
       }
     }
   }
@@ -1258,21 +1289,25 @@ void FileJournal::flush()
 void FileJournal::write_thread_entry()
 {
   dout(10) << "write_thread_entry start" << dendl;
-  while (1) {
+  while (1)
+  {
     {
       Mutex::Locker locker(writeq_lock);
-      if (writeq.empty() && !must_write_header) {
-	if (write_stop)
-	  break;
-	dout(20) << "write_thread_entry going to sleep" << dendl;
-	writeq_cond.Wait(writeq_lock);
-	dout(20) << "write_thread_entry woke up" << dendl;
-	continue;
+      if (writeq.empty() && !must_write_header)
+      {
+        if (write_stop)
+          break;
+
+        dout(20) << "write_thread_entry going to sleep" << dendl;
+        writeq_cond.Wait(writeq_lock);
+        dout(20) << "write_thread_entry woke up" << dendl;
+        continue;
       }
     }
 
 #ifdef HAVE_LIBAIO
-    if (aio) {
+    if (aio)
+    {
       Mutex::Locker locker(aio_lock);
       // should we back off to limit aios in flight?  try to do this
       // adaptively so that we submit larger aios once we have lots of
@@ -1285,20 +1320,25 @@ void FileJournal::write_thread_entry()
       // but should be fine given that we will have plenty of aios in
       // flight if we hit this limit to ensure we keep the device
       // saturated.
-      while (aio_num > 0) {
-	int exp = MIN(aio_num * 2, 24);
-	long unsigned min_new = 1ull << exp;
-	uint64_t cur = aio_write_queue_bytes;
-	dout(20) << "write_thread_entry aio throttle: aio num " << aio_num << " bytes " << aio_bytes
-		 << " ... exp " << exp << " min_new " << min_new
-		 << " ... pending " << cur << dendl;
-	if (cur >= min_new)
-	  break;
-	dout(20) << "write_thread_entry deferring until more aios complete: "
-		 << aio_num << " aios with " << aio_bytes << " bytes needs " << min_new
-		 << " bytes to start a new aio (currently " << cur << " pending)" << dendl;
-	aio_cond.Wait(aio_lock);
-	dout(20) << "write_thread_entry woke up" << dendl;
+      while (aio_num > 0)
+      {
+        int exp = MIN(aio_num * 2, 24);
+        long unsigned min_new = 1ull << exp;
+        uint64_t cur = aio_write_queue_bytes;
+
+        dout(20) << "write_thread_entry aio throttle: aio num " << aio_num << " bytes " << aio_bytes
+          << " ... exp " << exp << " min_new " << min_new
+          << " ... pending " << cur << dendl;
+
+        if (cur >= min_new)
+          break;
+
+        dout(20) << "write_thread_entry deferring until more aios complete: "
+          << aio_num << " aios with " << aio_bytes << " bytes needs " << min_new
+          << " bytes to start a new aio (currently " << cur << " pending)" << dendl;
+
+        aio_cond.Wait(aio_lock);
+        dout(20) << "write_thread_entry woke up" << dendl;
       }
     }
 #endif
@@ -1309,27 +1349,34 @@ void FileJournal::write_thread_entry()
 
     bufferlist bl;
     int r = prepare_multi_write(bl, orig_ops, orig_bytes);
+
     // Don't care about journal full if stoppping, so drop queue and
     // possibly let header get written and loop above to notice stop
-    if (r == -ENOSPC) {
-      if (write_stop) {
-	dout(20) << "write_thread_entry full and stopping, throw out queue and finish up" << dendl;
-	while (!writeq_empty()) {
-	  complete_write(1, peek_write().orig_len);
-	  pop_write();
-	}
-	print_header(header);
-	r = 0;
-      } else {
-	dout(20) << "write_thread_entry full, going to sleep (waiting for commit)" << dendl;
-	commit_cond.Wait(write_lock);
-	dout(20) << "write_thread_entry woke up" << dendl;
-	continue;
+    if (r == -ENOSPC)
+    {
+      if (write_stop)
+      {
+        dout(20) << "write_thread_entry full and stopping, throw out queue and finish up" << dendl;
+        while (!writeq_empty())
+        {
+          complete_write(1, peek_write().orig_len);
+          pop_write();
+        }
+        print_header(header);
+        r = 0;
+      }
+      else
+      {
+        dout(20) << "write_thread_entry full, going to sleep (waiting for commit)" << dendl;
+        commit_cond.Wait(write_lock);
+        dout(20) << "write_thread_entry woke up" << dendl;
+        continue;
       }
     }
     assert(r == 0);
 
-    if (logger) {
+    if (logger)
+    {
       logger->inc(l_os_j_wr);
       logger->inc(l_os_j_wr_bytes, bl.length());
     }
@@ -1658,20 +1705,25 @@ void FileJournal::submit_entry(uint64_t seq, bufferlist& e, uint32_t orig_len,
 			       Context *oncommit, TrackedOpRef osd_op)
 {
   // dump on queue
-  dout(5) << "submit_entry seq " << seq
-	  << " len " << e.length()
-	  << " (" << oncommit << ")" << dendl;
+  dout(5) << "submit_entry seq " << seq << " len " << e.length() << " (" << oncommit << ")" << dendl;
+
   assert(e.length() > 0);
 
   if (osd_op)
+  {
     osd_op->mark_event("commit_queued_for_journal_write");
-  if (logger) {
+  }
+
+  if (logger)
+  {
     logger->inc(l_os_jq_bytes, orig_len);
     logger->inc(l_os_jq_ops, 1);
   }
 
   throttle.register_throttle_seq(seq, e.length());
-  if (logger) {
+
+  if (logger)
+  {
     logger->inc(l_os_j_ops, 1);
     logger->inc(l_os_j_bytes, e.length());
   }
@@ -1689,11 +1741,16 @@ void FileJournal::submit_entry(uint64_t seq, bufferlist& e, uint32_t orig_len,
     aio_cond.Signal();
 #endif
 
-    completions.push_back(
-      completion_item(
-	seq, oncommit, ceph_clock_now(g_ceph_context), osd_op));
+    completions.push_back(completion_item(seq, oncommit, ceph_clock_now(g_ceph_context), osd_op));
+
     if (writeq.empty())
+    {
+      //Yuanguo: signal before push the item in writeq?
+      //  No problem, because current thread will not release the writeq_lock
+      //  until item is pushed into writeq.
       writeq_cond.Signal();
+    }
+
     writeq.push_back(write_item(seq, e, orig_len, osd_op));
   }
 }

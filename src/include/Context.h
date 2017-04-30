@@ -198,14 +198,20 @@ public:
   }
   bool empty() { return contexts.empty(); }
 
-  static ContextType *list_to_context(list<ContextType *> &cs) {
-    if (cs.size() == 0) {
+  static ContextType *list_to_context(list<ContextType *> &cs)
+  {
+    if (cs.size() == 0)
+    {
       return 0;
-    } else if (cs.size() == 1) {
+    }
+    else if (cs.size() == 1)
+    {
       ContextType *c = cs.front();
       cs.clear();
       return c;
-    } else {
+    }
+    else
+    {
       C_ContextsBase<ContextType, ContextInstanceType> *c(new C_ContextsBase<ContextType, ContextInstanceType>(0));
       c->take(cs);
       return c;

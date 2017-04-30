@@ -364,11 +364,18 @@ private:
 
   void do_discard(int64_t offset, int64_t end);
 
-  class Writer : public Thread {
+  //Yuanguo: journal writer is a single thread instead of a thread pool;
+  class Writer : public Thread
+  {
     FileJournal *journal;
   public:
-    explicit Writer(FileJournal *fj) : journal(fj) {}
-    void *entry() {
+
+    explicit Writer(FileJournal *fj) : journal(fj)
+    {
+    }
+
+    void *entry()
+    {
       journal->write_thread_entry();
       return 0;
     }

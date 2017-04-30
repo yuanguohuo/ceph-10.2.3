@@ -1379,33 +1379,48 @@ int ReplicatedPG::do_scrub_ls(MOSDOp *m, OSDOp *osd_op)
 void ReplicatedPG::calc_trim_to()
 {
   size_t target = cct->_conf->osd_min_pg_log_entries;
+
+  dout(99) << "YuanguoDbg: ReplicatedPG::calc_trim_to, set to osd_min_pg_log_entries " << target << dendl;
+
   if (is_degraded() ||
       state_test(PG_STATE_RECOVERING |
 		 PG_STATE_RECOVERY_WAIT |
 		 PG_STATE_BACKFILL |
 		 PG_STATE_BACKFILL_WAIT |
-		 PG_STATE_BACKFILL_TOOFULL)) {
+		 PG_STATE_BACKFILL_TOOFULL))
+  {
     target = cct->_conf->osd_max_pg_log_entries;
+    dout(99) << "YuanguoDbg: ReplicatedPG::calc_trim_to, set to osd_max_pg_log_entries " << target << dendl;
   }
 
   if (min_last_complete_ondisk != eversion_t() &&
       min_last_complete_ondisk != pg_trim_to &&
-      pg_log.get_log().approx_size() > target) {
+      pg_log.get_log().approx_size() > target)
+  {
     size_t num_to_trim = pg_log.get_log().approx_size() - target;
-    if (num_to_trim < cct->_conf->osd_pg_log_trim_min) {
+
+    dout(99) << "YuanguoDbg: ReplicatedPG::calc_trim_to, pg log size=" << pg_log.get_log().approx_size() << " num_to_trim=" << num_to_trim << dendl;
+
+    if (num_to_trim < cct->_conf->osd_pg_log_trim_min)
+    {
+      dout(99) << "YuanguoDbg: ReplicatedPG::calc_trim_to, num_to_trim is below osd_pg_log_trim_min " << cct->_conf->osd_pg_log_trim_min << dendl;
       return;
     }
+
     list<pg_log_entry_t>::const_iterator it = pg_log.get_log().log.begin();
     eversion_t new_trim_to;
-    for (size_t i = 0; i < num_to_trim; ++i) {
+    for (size_t i = 0; i < num_to_trim; ++i)
+    {
       new_trim_to = it->version;
       ++it;
-      if (new_trim_to > min_last_complete_ondisk) {
-	new_trim_to = min_last_complete_ondisk;
-	dout(10) << "calc_trim_to trimming to min_last_complete_ondisk" << dendl;
-	break;
+      if (new_trim_to > min_last_complete_ondisk)
+      {
+        new_trim_to = min_last_complete_ondisk;
+        dout(10) << "calc_trim_to trimming to min_last_complete_ondisk" << dendl;
+        break;
       }
     }
+
     dout(10) << "calc_trim_to " << pg_trim_to << " -> " << new_trim_to << dendl;
     pg_trim_to = new_trim_to;
     assert(pg_trim_to <= pg_log.get_head());
@@ -1619,8 +1634,8 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   {
     dout(99) << "YuanguoDbg: ReplicatedPG::do_op, m->ops: " << *citer 
              << " ++++++ {"
-             << " op=[" << citer->op.op << "," << citer->op.flags << "]" 
-             << " soid=" << citer->soid 
+             << " op=[" << citer->op.op << "," << citer->op.flags << "]"//create: 8717 = 0x220D = CEPH_OSD_OP_MODE_WR|CEPH_OSD_OP_TYPE_DATA|13
+             << " soid=" << citer->soid                                 //write : 8705 = 0x2201 = CEPH_OSD_OP_MODE_WR|CEPH_OSD_OP_TYPE_DATA|1
              << " }" 
              << dendl;
   }
@@ -1697,10 +1712,9 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   //         info.pgid.pgid.m_seed = 2b;      the dirname in osd.x/current/ is "1.2b";
   //         the former is given by the client, it should be mapped to the latter somehow. How??
 	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, oid=" << m->get_oid() 
-    << " object_locator=[" << m->get_object_locator().pool << ", " << m->get_object_locator().key << ", " 
-                           << m->get_object_locator().nspace << ", " << m->get_object_locator().hash << "]" 
-    << " pg=[" << m->get_pg().m_pool << ", " << m->get_pg().m_seed << ", " << m->get_pg().m_preferred << "]" 
-    << " info.pgid.pgid=[" << info.pgid.pgid.m_pool << ", " << info.pgid.pgid.m_seed << ", " << info.pgid.pgid.m_preferred  << "]"
+    << " object_locator=[" << m->get_object_locator().pool << "," << m->get_object_locator().key << "," << m->get_object_locator().nspace << "," << m->get_object_locator().hash << "]" 
+    << " pg=[" << m->get_pg().m_pool << "," << m->get_pg().m_seed << "," << m->get_pg().m_preferred << "]" 
+    << " info.pgid.pgid=[" << info.pgid.pgid.m_pool << "," << info.pgid.pgid.m_seed << "," << info.pgid.pgid.m_preferred  << "]"
     << " info.pgid.shard=[" << info.pgid.shard.id << "]"
     << dendl;
 
@@ -1811,7 +1825,8 @@ void ReplicatedPG::do_op(OpRequestRef& op)
 	   << dendl;
 
   if (write_ordered &&
-      scrubber.write_blocked_by_scrub(head, get_sort_bitwise())) {
+      scrubber.write_blocked_by_scrub(head, get_sort_bitwise()))
+  {
     dout(20) << __func__ << ": waiting for scrub" << dendl;
     waiting_for_active.push_back(op);
     op->mark_delayed("waiting for scrub");
@@ -1819,36 +1834,41 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   }
 
   // missing object?
-  if (is_unreadable_object(head)) {
+  if (is_unreadable_object(head))
+  {
     wait_for_unreadable_object(head, op);
     return;
   }
 
   // degraded object?
-  if (write_ordered && is_degraded_or_backfilling_object(head)) {
+  if (write_ordered && is_degraded_or_backfilling_object(head))
+  {
     wait_for_degraded_object(head, op);
     return;
   }
 
   // blocked on snap?
-  map<hobject_t, snapid_t>::iterator blocked_iter =
-    objects_blocked_on_degraded_snap.find(head);
-  if (write_ordered && blocked_iter != objects_blocked_on_degraded_snap.end()) {
+  map<hobject_t, snapid_t>::iterator blocked_iter = objects_blocked_on_degraded_snap.find(head);
+  if (write_ordered && blocked_iter != objects_blocked_on_degraded_snap.end())
+  {
     hobject_t to_wait_on(head);
     to_wait_on.snap = blocked_iter->second;
     wait_for_degraded_object(to_wait_on, op);
     return;
   }
-  map<hobject_t, ObjectContextRef>::iterator blocked_snap_promote_iter =
-    objects_blocked_on_snap_promotion.find(head);
+
+  map<hobject_t, ObjectContextRef>::iterator blocked_snap_promote_iter = objects_blocked_on_snap_promotion.find(head);
   if (write_ordered && 
-      blocked_snap_promote_iter != objects_blocked_on_snap_promotion.end()) {
+      blocked_snap_promote_iter != objects_blocked_on_snap_promotion.end())
+  {
     wait_for_blocked_object(
       blocked_snap_promote_iter->second->obs.oi.soid,
       op);
     return;
   }
-  if (write_ordered && objects_blocked_on_cache_full.count(head)) {
+
+  if (write_ordered && objects_blocked_on_cache_full.count(head))
+  {
     block_write_on_full_cache(head, op);
     return;
   }
@@ -1856,19 +1876,22 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   // missing snapdir?
   hobject_t snapdir = head.get_snapdir();
 
-  if (is_unreadable_object(snapdir)) {
+  if (is_unreadable_object(snapdir))
+  {
     wait_for_unreadable_object(snapdir, op);
     return;
   }
 
   // degraded object?
-  if (write_ordered && is_degraded_or_backfilling_object(snapdir)) {
+  if (write_ordered && is_degraded_or_backfilling_object(snapdir))
+  {
     wait_for_degraded_object(snapdir, op);
     return;
   }
  
   // asking for SNAPDIR is only ok for reads
-  if (m->get_snapid() == CEPH_SNAPDIR && op->may_write()) {
+  if (m->get_snapid() == CEPH_SNAPDIR && op->may_write())
+  {
     osd->reply_op_error(op, -EINVAL);
     return;
   }
@@ -1935,10 +1958,9 @@ void ReplicatedPG::do_op(OpRequestRef& op)
   hobject_t missing_oid;
 
 	dout(99) << "YuanguoDbg: ReplicatedPG::do_op, oid=" << m->get_oid() 
-    << " object_locator=[" << m->get_object_locator().pool << ", " << m->get_object_locator().key << ", " 
-                           << m->get_object_locator().nspace << ", " << m->get_object_locator().hash << "]" 
+    << " object_locator=[" << m->get_object_locator().pool << "," << m->get_object_locator().key << "," << m->get_object_locator().nspace << "," << m->get_object_locator().hash << "]" 
     << " snapid=[" << m->get_snapid() << "]" 
-    << " pg=[" << m->get_pg().m_pool << ", " << m->get_pg().m_seed << ", " << m->get_pg().m_preferred << "]" 
+    << " pg=[" << m->get_pg().m_pool << "," << m->get_pg().m_seed << "," << m->get_pg().m_preferred << "]" 
     << dendl;
 
   hobject_t oid(m->get_oid(),
@@ -1952,7 +1974,8 @@ void ReplicatedPG::do_op(OpRequestRef& op)
 
   // io blocked on obc?
   if (!m->has_flag(CEPH_OSD_FLAG_FLUSH) &&
-      maybe_await_blocked_snapset(oid, op)) {
+      maybe_await_blocked_snapset(oid, op))
+  {
     return;
   }
 
@@ -3265,6 +3288,7 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
 
   //Yuanguo: there are write and/or cache ops ...
 
+  dout(99) << "YuanguoDbg: ReplicatedPG::execute_ctx, at_version=" << ctx->at_version << " user_at_version=" << ctx->user_at_version << dendl;
   ctx->reply->set_reply_versions(ctx->at_version, ctx->user_at_version);
 
   assert(op->may_write() || op->may_cache());
@@ -3313,6 +3337,7 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
             reply = new MOSDOpReply(m, 0, get_osdmap()->get_epoch(), 0, true);
             reply->set_reply_versions(ctx->at_version, ctx->user_at_version);
           }
+
           reply->add_flags(CEPH_OSD_FLAG_ACK);
           dout(10) << " sending ack: " << *m << " " << reply << dendl;
           osd->send_message_osd_client(reply, m->get_connection());
@@ -4359,17 +4384,26 @@ static string list_entries(const T& m) {
 bool ReplicatedPG::maybe_create_new_object(OpContext *ctx)
 {
   ObjectState& obs = ctx->new_obs;
-  if (!obs.exists) {
+  if (!obs.exists)
+  {
+	  dout(99) << "YuanguoDbg: ReplicatedPG::maybe_create_new_object, create new object " << obs.oi.soid << dendl;
     ctx->delta_stats.num_objects++;
     obs.exists = true;
     obs.oi.new_object();
     return true;
-  } else if (obs.oi.is_whiteout()) {
+  }
+  else if(obs.oi.is_whiteout())
+  {
+    //Yuanguo: I guess: an object becomes "non-existent" when it's marked as
+    //         whiteout. And when you create it again, the whiteout is cleared
+    //         and the object becomes "existent";
     dout(10) << __func__ << " clearing whiteout on " << obs.oi.soid << dendl;
     ctx->new_obs.oi.clear_flag(object_info_t::FLAG_WHITEOUT);
     --ctx->delta_stats.num_whiteouts;
     return true;
   }
+
+  dout(99) << "YuanguoDbg: ReplicatedPG::maybe_create_new_object, return false" << dendl;
   return false;
 }
 
@@ -4399,7 +4433,7 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
     tracepoint(osd, do_osd_op_pre, soid.oid.name.c_str(), soid.snap.val, op.op, ceph_osd_op_name(op.op), op.flags);
 
     dout(10) << "do_osd_op  " << osd_op << dendl;
-	  dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, osd_op=" << osd_op << "[" << osd_op.op.op << ", " << osd_op.op.flags << ", " << osd_op.soid << "]" << dendl;
+	  dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, osd_op=" << osd_op << "[" << osd_op.op.op << "," << osd_op.op.flags << "," << osd_op.soid << "]" << dendl;
 
     bufferlist::iterator bp = osd_op.indata.begin();
 
@@ -4418,7 +4452,10 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
         break;
       default:
         if (op.op & CEPH_OSD_OP_MODE_WR)
+        {
+          dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, user_modify = true" << dendl;
           ctx->user_modify = true;
+        }
     }
 
     ObjectContextRef src_obc;
@@ -4439,6 +4476,7 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
         op.extent.truncate_seq == 1 &&
         op.extent.truncate_size == (-1ULL))
     {
+      dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, munge -1 truncate to 0 truncate" << dendl;
       op.extent.truncate_size = 0;
       op.extent.truncate_seq = 0;
     }
@@ -4451,6 +4489,7 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
         op.extent.length <= cct->_conf->osd_max_object_size &&
         op.extent.offset + op.extent.length >= oi.size)
     {
+      dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, munge ZERO -> TRUNCATE" << dendl;
       if (op.extent.offset >= oi.size)
       {
         // no-op
@@ -4459,6 +4498,7 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 
       dout(10) << " munging ZERO " << op.extent.offset << "~" << op.extent.length << " -> TRUNCATE " 
                << op.extent.offset << " (old size is " << oi.size << ")" << dendl;
+
       op.op = CEPH_OSD_OP_TRUNCATE;
     }
 
@@ -5564,7 +5604,7 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
           }
           else
           {
-            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, write/create" << dendl;
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, write" << dendl;
             t->write(soid, op.extent.offset, op.extent.length, osd_op.indata, op.flags);
           }
 
@@ -5729,6 +5769,10 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
           }
           else
           {
+            dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, indata.length=" << osd_op.indata.length() << dendl;
+            //Yuanguo: rados_write_op_create() has no 'data' param, so there should not be any object-content-data;
+            //         the indata should be category, which is not implemented;
+            //         So, indata.length() should be 0;
             if (osd_op.indata.length())
             {
               bufferlist::iterator p = osd_op.indata.begin();
@@ -5752,10 +5796,12 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
               if (maybe_create_new_object(ctx))
               {
                 ctx->mod_desc.create();
+                dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, touch: " << soid << dendl;
                 t->touch(soid);
               }
               else if(is_whiteout)
               {
+                dout(99) << "YuanguoDbg: ReplicatedPG::do_osd_ops, change to non-whiteout: " << soid << dendl;
                 // to change whiteout to non-whiteout, it need an op to update xattr
                 t->nop();
               }
@@ -6920,22 +6966,31 @@ void ReplicatedPG::make_writeable(OpContext *ctx)
 	   << "  snapc=" << snapc << dendl;
   
   bool was_dirty = ctx->obc->obs.oi.is_dirty();
-  if (ctx->new_obs.exists) {
+  if (ctx->new_obs.exists)
+  {
+    dout(99) << "YuanguoDbg: ReplicatedPG::make_writeable, exists" << dendl;
     // we will mark the object dirty
-    if (ctx->undirty && was_dirty) {
+    if (ctx->undirty && was_dirty)
+    {
       dout(20) << " clearing DIRTY flag" << dendl;
       assert(ctx->new_obs.oi.is_dirty());
       ctx->new_obs.oi.clear_flag(object_info_t::FLAG_DIRTY);
       --ctx->delta_stats.num_objects_dirty;
       osd->logger->inc(l_osd_tier_clean);
-    } else if (!was_dirty && !ctx->undirty) {
+    }
+    else if(!was_dirty && !ctx->undirty)
+    {
       dout(20) << " setting DIRTY flag" << dendl;
       ctx->new_obs.oi.set_flag(object_info_t::FLAG_DIRTY);
       ++ctx->delta_stats.num_objects_dirty;
       osd->logger->inc(l_osd_tier_dirty);
     }
-  } else {
-    if (was_dirty) {
+  }
+  else
+  {
+    dout(99) << "YuanguoDbg: ReplicatedPG::make_writeable, NOT exist" << dendl;
+    if (was_dirty)
+    {
       dout(20) << " deletion, decrementing num_dirty and clearing flag" << dendl;
       ctx->new_obs.oi.clear_flag(object_info_t::FLAG_DIRTY);
       --ctx->delta_stats.num_objects_dirty;
@@ -6945,63 +7000,82 @@ void ReplicatedPG::make_writeable(OpContext *ctx)
   if ((ctx->new_obs.exists &&
        ctx->new_obs.oi.is_omap()) &&
       (!ctx->obc->obs.exists ||
-       !ctx->obc->obs.oi.is_omap())) {
+       !ctx->obc->obs.oi.is_omap()))
+  {
+    dout(99) << "YuanguoDbg: ReplicatedPG::make_writeable, incr num_objects_omap" << dendl;
     ++ctx->delta_stats.num_objects_omap;
   }
+
   if ((!ctx->new_obs.exists ||
        !ctx->new_obs.oi.is_omap()) &&
       (ctx->obc->obs.exists &&
-       ctx->obc->obs.oi.is_omap())) {
+       ctx->obc->obs.oi.is_omap()))
+  {
+    dout(99) << "YuanguoDbg: ReplicatedPG::make_writeable, decr num_objects_omap" << dendl;
     --ctx->delta_stats.num_objects_omap;
   }
 
   // use newer snapc?
-  if (ctx->new_snapset.seq > snapc.seq) {
+  if (ctx->new_snapset.seq > snapc.seq)
+  {
     snapc.seq = ctx->new_snapset.seq;
     snapc.snaps = ctx->new_snapset.snaps;
     dout(10) << " using newer snapc " << snapc << dendl;
   }
 
   if (ctx->obs->exists)
+  {
+    dout(99) << "YuanguoDbg: ReplicatedPG::make_writeable, filter snapc" << dendl;
     filter_snapc(snapc.snaps);
+  }
   
   if ((ctx->obs->exists && !ctx->obs->oi.is_whiteout()) && // head exist(ed)
       snapc.snaps.size() &&                 // there are snaps
       !ctx->cache_evict &&
-      snapc.snaps[0] > ctx->new_snapset.seq) {  // existing object is old
+      snapc.snaps[0] > ctx->new_snapset.seq)
+  {  // existing object is old
     // clone
     hobject_t coid = soid;
     coid.snap = snapc.seq;
-    
+
+    dout(99) << "YuanguoDbg: ReplicatedPG::make_writeable, clone coid=" << coid << " soid=" << soid << dendl;
+
     unsigned l;
     for (l=1; l<snapc.snaps.size() && snapc.snaps[l] > ctx->new_snapset.seq; l++) ;
-    
+
     vector<snapid_t> snaps(l);
     for (unsigned i=0; i<l; i++)
+    {
       snaps[i] = snapc.snaps[i];
-    
+    }
+
     // prepare clone
     object_info_t static_snap_oi(coid);
     object_info_t *snap_oi;
-    if (is_primary()) {
+    if (is_primary())
+    {
       ctx->clone_obc = object_contexts.lookup_or_create(static_snap_oi.soid);
       ctx->clone_obc->destructor_callback = new C_PG_ObjectContext(this, ctx->clone_obc.get());
       ctx->clone_obc->obs.oi = static_snap_oi;
       ctx->clone_obc->obs.exists = true;
       ctx->clone_obc->ssc = ctx->obc->ssc;
       ctx->clone_obc->ssc->ref++;
+
       if (pool.info.require_rollback())
-	ctx->clone_obc->attr_cache = ctx->obc->attr_cache;
+      {
+        ctx->clone_obc->attr_cache = ctx->obc->attr_cache;
+      }
+
       snap_oi = &ctx->clone_obc->obs.oi;
-      bool got = ctx->lock_manager.get_write_greedy(
-	coid,
-	ctx->clone_obc,
-	ctx->op);
+      bool got = ctx->lock_manager.get_write_greedy(coid, ctx->clone_obc, ctx->op);
       assert(got);
       dout(20) << " got greedy write on clone_obc " << *ctx->clone_obc << dendl;
-    } else {
+    }
+    else
+    {
       snap_oi = &static_snap_oi;
     }
+
     snap_oi->version = ctx->at_version;
     snap_oi->prior_version = ctx->obs->oi.version;
     snap_oi->copy_user_bits(ctx->obs->oi);
@@ -7014,14 +7088,22 @@ void ReplicatedPG::make_writeable(OpContext *ctx)
     ctx->op_t.reset(t);
     
     ctx->delta_stats.num_objects++;
-    if (snap_oi->is_dirty()) {
+    if (snap_oi->is_dirty())
+    {
       ctx->delta_stats.num_objects_dirty++;
       osd->logger->inc(l_osd_tier_dirty);
     }
+
     if (snap_oi->is_omap())
+    {
       ctx->delta_stats.num_objects_omap++;
+    }
+
     if (snap_oi->is_cache_pinned())
+    {
       ctx->delta_stats.num_objects_pinned++;
+    }
+
     ctx->delta_stats.num_object_clones++;
     ctx->new_snapset.clones.push_back(coid.snap);
     ctx->new_snapset.clone_size[coid.snap] = ctx->obs->oi.size;
@@ -7030,16 +7112,23 @@ void ReplicatedPG::make_writeable(OpContext *ctx)
     // (an empty interval_set if there is no overlap)
     ctx->new_snapset.clone_overlap[coid.snap];
     if (ctx->obs->oi.size)
+    {
       ctx->new_snapset.clone_overlap[coid.snap].insert(0, ctx->obs->oi.size);
+    }
     
     // log clone
     dout(10) << " cloning v " << ctx->obs->oi.version
-	     << " to " << coid << " v " << ctx->at_version
-	     << " snaps=" << snaps << dendl;
-    ctx->log.push_back(pg_log_entry_t(pg_log_entry_t::CLONE, coid, ctx->at_version,
-				      ctx->obs->oi.version,
-				      ctx->obs->oi.user_version,
-				      osd_reqid_t(), ctx->new_obs.oi.mtime));
+	           << " to " << coid << " v " << ctx->at_version
+	           << " snaps=" << snaps << dendl;
+
+    ctx->log.push_back(pg_log_entry_t(pg_log_entry_t::CLONE, 
+                                      coid, 
+                                      ctx->at_version,
+				                              ctx->obs->oi.version,
+				                              ctx->obs->oi.user_version,
+				                              osd_reqid_t(), 
+                                      ctx->new_obs.oi.mtime));
+
     ::encode(snaps, ctx->log.back().snaps);
     ctx->log.back().mod_desc.create();
 
@@ -7047,12 +7136,19 @@ void ReplicatedPG::make_writeable(OpContext *ctx)
   }
 
   // update most recent clone_overlap and usage stats
-  if (ctx->new_snapset.clones.size() > 0) {
+  if (ctx->new_snapset.clones.size() > 0)
+  {
     /* we need to check whether the most recent clone exists, if it's been evicted,
      * it's not included in the stats */
     hobject_t last_clone_oid = soid;
     last_clone_oid.snap = ctx->new_snapset.clone_overlap.rbegin()->first;
-    if (is_present_clone(last_clone_oid)) {
+
+    dout(99) << "YuanguoDbg: ReplicatedPG::make_writeable, last_clone_oid=" << last_clone_oid << " soid=" << soid << dendl;
+
+    if (is_present_clone(last_clone_oid))
+    {
+      dout(99) << "YuanguoDbg: ReplicatedPG::make_writeable, is present clone" << dendl;
+
       interval_set<uint64_t> &newest_overlap = ctx->new_snapset.clone_overlap.rbegin()->second;
       ctx->modified_ranges.intersection_of(newest_overlap);
       // modified_ranges is still in use by the clone
@@ -7302,12 +7398,20 @@ void ReplicatedPG::finish_ctx(OpContext *ctx, int log_op_type, bool maintain_ssc
     ::encode(ctx->new_snapset, bss);
     assert(ctx->new_obs.exists == ctx->new_snapset.head_exists);
 
+    dout(99) << "YuanguoDbg: ReplicatedPG::finish_ctx, NOSNAP and maintain_ssc, soid=" << soid << " new_snapset=" << ctx->new_snapset << dendl;
+
     if (ctx->new_obs.exists)
     {
+      dout(99) << "YuanguoDbg: ReplicatedPG::finish_ctx, new_obs exists" << dendl;
       if(!ctx->obs->exists)
       {
+        //Yuanguo: new_obs.exists AND !obs->exists, thus the obj is newly created by current op?
+        dout(99) << "YuanguoDbg: ReplicatedPG::finish_ctx, obs NOT exist" << dendl;
+
         if (ctx->snapset_obc && ctx->snapset_obc->obs.exists)
         {
+          dout(99) << "YuanguoDbg: ReplicatedPG::finish_ctx, snapset_obc AND exists" << dendl;
+
           hobject_t snapoid = soid.get_snapdir();
           ctx->log.push_back(pg_log_entry_t(pg_log_entry_t::DELETE, snapoid, ctx->at_version, ctx->snapset_obc->obs.oi.version, 0, osd_reqid_t(), ctx->mtime));
           if (pool.info.require_rollback())
@@ -7337,6 +7441,8 @@ void ReplicatedPG::finish_ctx(OpContext *ctx, int log_op_type, bool maintain_ssc
     }
     else if (ctx->new_snapset.clones.size() && !ctx->cache_evict && (!ctx->snapset_obc || !ctx->snapset_obc->obs.exists))
     {
+      dout(99) << "YuanguoDbg: ReplicatedPG::finish_ctx, clone.size=" << ctx->new_snapset.clones.size() << dendl;
+
       // save snapset on _snap
       hobject_t snapoid(soid.oid, soid.get_key(), CEPH_SNAPDIR, soid.get_hash(), info.pgid.pool(), soid.get_namespace());
       dout(10) << " final snapset " << ctx->new_snapset << " in " << snapoid << dendl;
@@ -7408,6 +7514,7 @@ void ReplicatedPG::finish_ctx(OpContext *ctx, int log_op_type, bool maintain_ssc
   // finish and log the op.
   if (ctx->user_modify)
   {
+    dout(99) << "YuanguoDbg: ReplicatedPG::finish_ctx, user modify" << dendl;
     // update the user_version for any modify ops, except for the watch op
     ctx->user_at_version = MAX(info.last_user_version, ctx->new_obs.oi.user_version) + 1;
 
@@ -7427,6 +7534,8 @@ void ReplicatedPG::finish_ctx(OpContext *ctx, int log_op_type, bool maintain_ssc
  
   if (ctx->new_obs.exists)
   {
+    dout(99) << "YuanguoDbg: ReplicatedPG::finish_ctx, new_obs.exists=true" << dendl;
+
     // on the head object
     ctx->new_obs.oi.version = ctx->at_version;
     ctx->new_obs.oi.prior_version = ctx->obs->oi.version;
@@ -7461,6 +7570,8 @@ void ReplicatedPG::finish_ctx(OpContext *ctx, int log_op_type, bool maintain_ssc
 
     if (pool.info.require_rollback())
     {
+      dout(99) << "YuanguoDbg: ReplicatedPG::finish_ctx, require rollback" << dendl;
+
       set<string> changing;
       changing.insert(OI_ATTR);
 
@@ -7472,12 +7583,14 @@ void ReplicatedPG::finish_ctx(OpContext *ctx, int log_op_type, bool maintain_ssc
     }
     else
     {
+      dout(99) << "YuanguoDbg: ReplicatedPG::finish_ctx, mark unrollbackable" << dendl;
       // replicated pools are never rollbackable in this case
       ctx->mod_desc.mark_unrollbackable();
     }
   }
   else
   {
+    dout(99) << "YuanguoDbg: ReplicatedPG::finish_ctx, new_obs.exists=false" << dendl;
     ctx->new_obs.oi = object_info_t(ctx->obc->obs.oi.soid);
   }
 
@@ -7498,6 +7611,7 @@ void ReplicatedPG::finish_ctx(OpContext *ctx, int log_op_type, bool maintain_ssc
       ::encode(ctx->new_obs.oi.snaps, ctx->log.back().snaps);
       break;
     default:
+      dout(99) << "YuanguoDbg: ReplicatedPG::finish_ctx, default do nothing" << dendl;
       break;
     }
   }
@@ -7514,16 +7628,20 @@ void ReplicatedPG::finish_ctx(OpContext *ctx, int log_op_type, bool maintain_ssc
 
   if (soid.is_head() && !ctx->obc->obs.exists && (!maintain_ssc || ctx->cache_evict))
   {
+    dout(99) << "YuanguoDbg: ReplicatedPG::finish_ctx, set ssc exists to false" << dendl;
     ctx->obc->ssc->exists = false;
     ctx->obc->ssc->snapset = SnapSet();
   }
   else
   {
+    dout(99) << "YuanguoDbg: ReplicatedPG::finish_ctx, set ssc exists to true" << dendl;
     ctx->obc->ssc->exists = true;
     ctx->obc->ssc->snapset = ctx->new_snapset;
   }
 
   apply_ctx_stats(ctx, scrub_ok);
+
+  dout(99) << "YuanguoDbg: ReplicatedPG::finish_ctx, Exit" << dendl;
 }
 
 void ReplicatedPG::apply_ctx_stats(OpContext *ctx, bool scrub_ok)
@@ -8980,13 +9098,19 @@ bool ReplicatedPG::is_present_clone(hobject_t coid)
 // ========================================================================
 // rep op gather
 
-class C_OSD_RepopApplied : public Context {
+class C_OSD_RepopApplied : public Context
+{
   ReplicatedPGRef pg;
   boost::intrusive_ptr<ReplicatedPG::RepGather> repop;
+
 public:
   C_OSD_RepopApplied(ReplicatedPG *pg, ReplicatedPG::RepGather *repop)
-  : pg(pg), repop(repop) {}
-  void finish(int) {
+  : pg(pg), repop(repop)
+  {
+  }
+
+  void finish(int)
+  {
     pg->repop_all_applied(repop.get());
   }
 };
@@ -8994,33 +9118,40 @@ public:
 
 void ReplicatedPG::repop_all_applied(RepGather *repop)
 {
-  dout(10) << __func__ << ": repop tid " << repop->rep_tid << " all applied "
-	   << dendl;
+  dout(10) << __func__ << ": repop tid " << repop->rep_tid << " all applied " << dendl;
   repop->all_applied = true;
-  if (!repop->rep_aborted) {
+  if (!repop->rep_aborted)
+  {
     eval_repop(repop);
   }
 }
 
-class C_OSD_RepopCommit : public Context {
+class C_OSD_RepopCommit : public Context
+{
   ReplicatedPGRef pg;
   boost::intrusive_ptr<ReplicatedPG::RepGather> repop;
+
 public:
   C_OSD_RepopCommit(ReplicatedPG *pg, ReplicatedPG::RepGather *repop)
-    : pg(pg), repop(repop) {}
-  void finish(int) {
+    : pg(pg), repop(repop)
+  {
+  }
+
+  void finish(int)
+  {
     pg->repop_all_committed(repop.get());
   }
 };
 
 void ReplicatedPG::repop_all_committed(RepGather *repop)
 {
-  dout(10) << __func__ << ": repop tid " << repop->rep_tid << " all committed "
-	   << dendl;
+  dout(10) << __func__ << ": repop tid " << repop->rep_tid << " all committed " << dendl;
   repop->all_committed = true;
 
-  if (!repop->rep_aborted) {
-    if (repop->v != eversion_t()) {
+  if (!repop->rep_aborted)
+  {
+    if (repop->v != eversion_t())
+    {
       last_update_ondisk = repop->v;
       last_complete_ondisk = repop->pg_local_last_complete;
     }
@@ -9062,171 +9193,202 @@ void ReplicatedPG::eval_repop(RepGather *repop)
 {
   MOSDOp *m = NULL;
   if (repop->op)
+  {
     m = static_cast<MOSDOp *>(repop->op->get_req());
+  }
 
   if (m)
+  {
     dout(10) << "eval_repop " << *repop
 	     << " wants=" << (m->wants_ack() ? "a":"") << (m->wants_ondisk() ? "d":"")
 	     << (repop->rep_done ? " DONE" : "")
 	     << dendl;
+  }
   else
+  {
     dout(10) << "eval_repop " << *repop << " (no op)"
 	     << (repop->rep_done ? " DONE" : "")
 	     << dendl;
+  }
 
   if (repop->rep_done)
     return;
 
   // ondisk?
-  if (repop->all_committed) {
+  if (repop->all_committed)
+  {
     dout(10) << " commit: " << *repop << dendl;
-    for (auto p = repop->on_committed.begin();
-	 p != repop->on_committed.end();
-	 repop->on_committed.erase(p++)) {
+
+    for (auto p = repop->on_committed.begin(); p != repop->on_committed.end(); repop->on_committed.erase(p++))
+    {
       (*p)();
     }
+
     // send dup commits, in order
-    if (waiting_for_ondisk.count(repop->v)) {
+    if (waiting_for_ondisk.count(repop->v))
+    {
       assert(waiting_for_ondisk.begin()->first == repop->v);
-      for (list<pair<OpRequestRef, version_t> >::iterator i =
-	     waiting_for_ondisk[repop->v].begin();
-	   i != waiting_for_ondisk[repop->v].end();
-	   ++i) {
-	osd->reply_op_error(i->first, 0, repop->v,
-			    i->second);
+
+      dout(99) << "YuanguoDbg: ReplicatedPG::eval_repop, reply those who are waiting for ondisk" << dendl;
+
+      for (list<pair<OpRequestRef, version_t> >::iterator i = waiting_for_ondisk[repop->v].begin(); i != waiting_for_ondisk[repop->v].end(); ++i)
+      {
+        osd->reply_op_error(i->first, 0, repop->v, i->second);
       }
       waiting_for_ondisk.erase(repop->v);
     }
+    else
+    {
+      dout(99) << "YuanguoDbg: ReplicatedPG::eval_repop, there is no one waiting for ondisk" << dendl;
+    }
 
     // clear out acks, we sent the commits above
-    if (waiting_for_ack.count(repop->v)) {
+    if (waiting_for_ack.count(repop->v))
+    {
       assert(waiting_for_ack.begin()->first == repop->v);
       waiting_for_ack.erase(repop->v);
     }
-
   }
 
   // applied?
-  if (repop->all_applied) {
+  if (repop->all_applied)
+  {
     dout(10) << " applied: " << *repop << " " << dendl;
-    for (auto p = repop->on_applied.begin();
-	 p != repop->on_applied.end();
-	 repop->on_applied.erase(p++)) {
+
+    for (auto p = repop->on_applied.begin(); p != repop->on_applied.end(); repop->on_applied.erase(p++))
+    {
       (*p)();
     }
 
     // send dup acks, in order
-    if (waiting_for_ack.count(repop->v)) {
+    if (waiting_for_ack.count(repop->v))
+    {
       assert(waiting_for_ack.begin()->first == repop->v);
-      for (list<pair<OpRequestRef, version_t> >::iterator i =
-	     waiting_for_ack[repop->v].begin();
-	   i != waiting_for_ack[repop->v].end();
-	   ++i) {
-	MOSDOp *m = static_cast<MOSDOp*>(i->first->get_req());
-	MOSDOpReply *reply = new MOSDOpReply(m, 0, get_osdmap()->get_epoch(), 0, true);
-	reply->set_reply_versions(repop->v,
-				  i->second);
-	reply->add_flags(CEPH_OSD_FLAG_ACK);
-	osd->send_message_osd_client(reply, m->get_connection());
+
+      dout(99) << "YuanguoDbg: ReplicatedPG::eval_repop, reply those who are waiting for ack" << dendl;
+
+      for (list<pair<OpRequestRef, version_t> >::iterator i = waiting_for_ack[repop->v].begin(); i != waiting_for_ack[repop->v].end(); ++i)
+      {
+        MOSDOp *m = static_cast<MOSDOp*>(i->first->get_req());
+        MOSDOpReply *reply = new MOSDOpReply(m, 0, get_osdmap()->get_epoch(), 0, true);
+
+        reply->set_reply_versions(repop->v, i->second);
+        reply->add_flags(CEPH_OSD_FLAG_ACK);
+        osd->send_message_osd_client(reply, m->get_connection());
       }
+
       waiting_for_ack.erase(repop->v);
+    }
+    else
+    {
+      dout(99) << "YuanguoDbg: ReplicatedPG::eval_repop, there is no one waiting for ack" << dendl;
     }
   }
 
   // done.
-  if (repop->all_applied && repop->all_committed) {
+  if (repop->all_applied && repop->all_committed)
+  {
     repop->rep_done = true;
 
     publish_stats_to_osd();
     calc_min_last_complete_ondisk();
 
-    for (auto p = repop->on_success.begin();
-	 p != repop->on_success.end();
-	 repop->on_success.erase(p++)) {
+    for (auto p = repop->on_success.begin(); p != repop->on_success.end(); repop->on_success.erase(p++))
+    {
       (*p)();
     }
 
     dout(10) << " removing " << *repop << dendl;
     assert(!repop_queue.empty());
     dout(20) << "   q front is " << *repop_queue.front() << dendl; 
-    if (repop_queue.front() != repop) {
+
+    if (repop_queue.front() != repop)
+    {
       dout(0) << " removing " << *repop << dendl;
       dout(0) << "   q front is " << *repop_queue.front() << dendl; 
       assert(repop_queue.front() == repop);
     }
+
     repop_queue.pop_front();
     remove_repop(repop);
   }
 }
 
+
 void ReplicatedPG::issue_repop(RepGather *repop, OpContext *ctx)
 {
   const hobject_t& soid = ctx->obs->oi.soid;
-  dout(7) << "issue_repop rep_tid " << repop->rep_tid
-          << " o " << soid
-          << dendl;
+  dout(7) << "issue_repop rep_tid " << repop->rep_tid << " o " << soid << dendl;
 
   repop->v = ctx->at_version;
-  if (ctx->at_version > eversion_t()) {
-    for (set<pg_shard_t>::iterator i = actingbackfill.begin();
-	 i != actingbackfill.end();
-	 ++i) {
-      if (*i == get_primary()) continue;
+  if (ctx->at_version > eversion_t())
+  {
+    for (set<pg_shard_t>::iterator i = actingbackfill.begin(); i != actingbackfill.end(); ++i)
+    {
+      if (*i == get_primary())
+      {
+        continue;
+      }
+
       pg_info_t &pinfo = peer_info[*i];
       // keep peer_info up to date
       if (pinfo.last_complete == pinfo.last_update)
-	pinfo.last_complete = ctx->at_version;
+      {
+        pinfo.last_complete = ctx->at_version;
+      }
       pinfo.last_update = ctx->at_version;
     }
   }
 
   ctx->obc->ondisk_write_lock();
   if (ctx->clone_obc)
+  {
     ctx->clone_obc->ondisk_write_lock();
+  }
 
   bool unlock_snapset_obc = false;
-  if (ctx->snapset_obc && ctx->snapset_obc->obs.oi.soid !=
-      ctx->obc->obs.oi.soid) {
+  if (ctx->snapset_obc && ctx->snapset_obc->obs.oi.soid != ctx->obc->obs.oi.soid)
+  {
     ctx->snapset_obc->ondisk_write_lock();
     unlock_snapset_obc = true;
   }
 
   ctx->apply_pending_attrs();
 
-  if (pool.info.require_rollback()) {
-    for (vector<pg_log_entry_t>::iterator i = ctx->log.begin();
-	 i != ctx->log.end();
-	 ++i) {
+  if (pool.info.require_rollback())
+  {
+    for (vector<pg_log_entry_t>::iterator i = ctx->log.begin(); i != ctx->log.end(); ++i)
+    {
       assert(i->mod_desc.can_rollback());
       assert(!i->mod_desc.empty());
     }
   }
 
-  Context *on_all_commit = new C_OSD_RepopCommit(this, repop);
-  Context *on_all_applied = new C_OSD_RepopApplied(this, repop);
-  Context *onapplied_sync = new C_OSD_OndiskWriteUnlock(
-    ctx->obc,
-    ctx->clone_obc,
-    unlock_snapset_obc ? ctx->snapset_obc : ObjectContextRef());
+  Context *on_all_commit   = new C_OSD_RepopCommit(this, repop);
+  Context *on_all_applied  = new C_OSD_RepopApplied(this, repop);
+  Context *onapplied_sync  = new C_OSD_OndiskWriteUnlock(
+                                       ctx->obc,
+                                       ctx->clone_obc,
+                                       unlock_snapset_obc ? ctx->snapset_obc : ObjectContextRef()
+                                 );
+
   pgbackend->submit_transaction(
-    soid,
-    ctx->at_version,
-    std::move(ctx->op_t),
-    pg_trim_to,
-    min_last_complete_ondisk,
-    ctx->log,
-    ctx->updated_hset_history,
-    onapplied_sync,
-    on_all_applied,
-    on_all_commit,
-    repop->rep_tid,
-    ctx->reqid,
-    ctx->op);
+                    soid,
+                    ctx->at_version,
+                    std::move(ctx->op_t),
+                    pg_trim_to,
+                    min_last_complete_ondisk,
+                    ctx->log,
+                    ctx->updated_hset_history,
+                    onapplied_sync,
+                    on_all_applied,
+                    on_all_commit,
+                    repop->rep_tid,
+                    ctx->reqid,
+                    ctx->op);
 }
 
-ReplicatedPG::RepGather *ReplicatedPG::new_repop(
-  OpContext *ctx, ObjectContextRef obc,
-  ceph_tid_t rep_tid)
+ReplicatedPG::RepGather *ReplicatedPG::new_repop(OpContext *ctx, ObjectContextRef obc, ceph_tid_t rep_tid)
 {
   if (ctx->op)
     dout(10) << "new_repop rep_tid " << rep_tid << " on " << *ctx->op->get_req() << dendl;
@@ -9237,6 +9399,8 @@ ReplicatedPG::RepGather *ReplicatedPG::new_repop(
 
   repop->start = ceph_clock_now(cct);
 
+  //Yuanguo: put 'repop' into repop_queue;
+  //   repop->queue_item is essentially 'repop' itself;
   repop_queue.push_back(&repop->queue_item);
   repop->get();
 
@@ -9274,8 +9438,7 @@ void ReplicatedPG::remove_repop(RepGather *repop)
     (*p)();
   }
 
-  release_object_locks(
-    repop->lock_manager);
+  release_object_locks(repop->lock_manager);
 
   //Yuanguo: Are they locks got at this call path  ????
   //               ReplicatedPG::do_op  -->
@@ -9668,10 +9831,10 @@ ObjectContextRef ReplicatedPG::get_object_context(const hobject_t& soid,
 	
         if(obc->ssc)
         {
-          dout(99) << "YuanguoDbg: " << __func__ << ": snapset context=[" << obc->ssc->ref        << ", " 
-                                                                          << obc->ssc->registered << ", " 
-                                                                          << obc->ssc->exists     << ", " 
-                                                                          << obc->ssc->oid        << ", "
+          dout(99) << "YuanguoDbg: " << __func__ << ": snapset context=[" << obc->ssc->ref        << "," 
+                                                                          << obc->ssc->registered << "," 
+                                                                          << obc->ssc->exists     << "," 
+                                                                          << obc->ssc->oid        << ","
                                                                           << obc->ssc->snapset    << "]" << dendl;
         }
 
@@ -10060,41 +10223,63 @@ SnapSetContext *ReplicatedPG::get_snapset_context(
 {
   Mutex::Locker l(snapset_contexts_lock);
   SnapSetContext *ssc;
-  map<hobject_t, SnapSetContext*, hobject_t::BitwiseComparator>::iterator p = snapset_contexts.find(
-    oid.get_snapdir());
-  if (p != snapset_contexts.end()) {
+  map<hobject_t, SnapSetContext*, hobject_t::BitwiseComparator>::iterator p = snapset_contexts.find(oid.get_snapdir());
+  if (p != snapset_contexts.end())
+  {
     if (can_create || p->second->exists) {
       ssc = p->second;
-    } else {
+    }
+    else
+    {
       return NULL;
     }
-  } else {
+  }
+  else
+  {
     bufferlist bv;
-    if (!attrs) {
+    if (!attrs)
+    {
       int r = -ENOENT;
       if (!(oid.is_head() && !oid_existed))
-	r = pgbackend->objects_get_attr(oid.get_head(), SS_ATTR, &bv);
-      if (r < 0) {
-	// try _snapset
-      if (!(oid.is_snapdir() && !oid_existed))
-	r = pgbackend->objects_get_attr(oid.get_snapdir(), SS_ATTR, &bv);
-	if (r < 0 && !can_create)
-	  return NULL;
+      {
+        r = pgbackend->objects_get_attr(oid.get_head(), SS_ATTR, &bv);
       }
-    } else {
+
+      if (r < 0)
+      {
+        // try _snapset
+        if (!(oid.is_snapdir() && !oid_existed))
+        {
+          r = pgbackend->objects_get_attr(oid.get_snapdir(), SS_ATTR, &bv);
+        }
+
+        if (r < 0 && !can_create)
+        {
+          return NULL;
+        }
+      }
+    }
+    else
+    {
       assert(attrs->count(SS_ATTR));
       bv = attrs->find(SS_ATTR)->second;
     }
+
     ssc = new SnapSetContext(oid.get_snapdir());
     _register_snapset_context(ssc);
-    if (bv.length()) {
+
+    if (bv.length())
+    {
       bufferlist::iterator bvp = bv.begin();
       ssc->snapset.decode(bvp);
       ssc->exists = true;
-    } else {
+    }
+    else
+    {
       ssc->exists = false;
     }
   }
+
   assert(ssc);
   ssc->ref++;
   return ssc;
@@ -13935,9 +14120,16 @@ void ReplicatedPG::setattrs_maybe_cache(
   PGBackend::PGTransaction *t,
   map<string, bufferlist> &attrs)
 {
-  if (pool.info.require_rollback()) {
-    for (map<string, bufferlist>::iterator it = attrs.begin();
-      it != attrs.end(); ++it) {
+  dout(99) << "YuanguoDbg: ReplicatedPG::setattrs_maybe_cache, attrs.size=" << attrs.size() << dendl;
+  for (map<string, bufferlist>::const_iterator itr = attrs.begin(); itr != attrs.end(); ++itr)
+  {
+    dout(99) << "YuanguoDbg: ReplicatedPG::setattrs_maybe_cache, attrs: " << itr->first << " ==> " << itr->second << dendl;
+  }
+
+  if (pool.info.require_rollback())
+  {
+    for (map<string, bufferlist>::iterator it = attrs.begin(); it != attrs.end(); ++it)
+    {
       op->pending_attrs[obc][it->first] = it->second;
     }
   }

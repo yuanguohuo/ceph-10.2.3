@@ -194,12 +194,7 @@ PG::PG(OSDService *o, OSDMapRef curmap,
   osd(o),
   cct(o->cct),
   osdriver(osd->store, coll_t(), OSD::make_snapmapper_oid()),
-  snap_mapper(
-    &osdriver,
-    p.ps(),
-    p.get_split_bits(curmap->get_pg_num(_pool.id)),
-    _pool.id,
-    p.shard),
+  snap_mapper(&osdriver, p.ps(), p.get_split_bits(curmap->get_pg_num(_pool.id)), _pool.id, p.shard),
   map_lock("PG::map_lock"),
   osdmap_ref(curmap), last_persisted_osdmap_ref(curmap), pool(_pool),
   _lock("PG::_lock"),
@@ -262,6 +257,8 @@ void PG::lock_suspend_timeout(ThreadPool::TPHandle &handle)
 
 void PG::lock(bool no_lockdep) const
 {
+  dout(99) << "YuanguoDbg: PG::lock " << pg_id << dendl;
+
   _lock.Lock(no_lockdep);
   // if we have unrecorded dirty state with the lock dropped, there is a bug
   assert(!dirty_info);
@@ -3024,47 +3021,45 @@ void PG::append_log(
   bool transaction_applied)
 {
   if (transaction_applied)
+  {
     update_snap_map(logv, t);
+  }
 
   /* The primary has sent an info updating the history, but it may not
    * have arrived yet.  We want to make sure that we cannot remember this
    * write without remembering that it happened in an interval which went
    * active in epoch history.last_epoch_started.
    */
-  if (info.last_epoch_started != info.history.last_epoch_started) {
+  if (info.last_epoch_started != info.history.last_epoch_started)
+  {
     info.history.last_epoch_started = info.last_epoch_started;
   }
+
   dout(10) << "append_log " << pg_log.get_log() << " " << logv << dendl;
 
-  for (vector<pg_log_entry_t>::const_iterator p = logv.begin();
-       p != logv.end();
-       ++p) {
+  for (vector<pg_log_entry_t>::const_iterator p = logv.begin(); p != logv.end(); ++p)
+  {
     add_log_entry(*p);
   }
 
   PGLogEntryHandler handler;
-  if (!transaction_applied) {
+
+  if (!transaction_applied)
+  {
     pg_log.clear_can_rollback_to(&handler);
-    t.register_on_applied(
-      new C_UpdateLastRollbackInfoTrimmedToApplied(
-	this,
-	get_osdmap()->get_epoch(),
-	info.last_update));
-  } else if (trim_rollback_to > pg_log.get_rollback_trimmed_to()) {
-    pg_log.trim_rollback_info(
-      trim_rollback_to,
-      &handler);
-    t.register_on_applied(
-      new C_UpdateLastRollbackInfoTrimmedToApplied(
-	this,
-	get_osdmap()->get_epoch(),
-	trim_rollback_to));
+    t.register_on_applied(new C_UpdateLastRollbackInfoTrimmedToApplied(this, get_osdmap()->get_epoch(), info.last_update));
+  }
+  else if(trim_rollback_to > pg_log.get_rollback_trimmed_to())
+  {
+    pg_log.trim_rollback_info(trim_rollback_to, &handler);
+
+    t.register_on_applied(new C_UpdateLastRollbackInfoTrimmedToApplied(this, get_osdmap()->get_epoch(), trim_rollback_to));
   }
 
   pg_log.trim(&handler, trim_to, info);
 
-  dout(10) << __func__ << ": trimming to " << trim_rollback_to
-	   << " entries " << handler.to_trim << dendl;
+  dout(10) << __func__ << ": trimming to " << trim_rollback_to << " entries " << handler.to_trim << dendl;
+
   handler.apply(this, &t);
 
   // update the local pg, pg log

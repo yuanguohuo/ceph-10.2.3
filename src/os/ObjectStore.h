@@ -151,7 +151,8 @@ public:
    * ABC for Sequencer implementation, private to the ObjectStore derived class.
    * created in ...::queue_transaction(s)
    */
-  struct Sequencer_impl : public RefCountedObject {
+  struct Sequencer_impl : public RefCountedObject
+  {
     virtual void flush() = 0;
 
     /**
@@ -177,31 +178,41 @@ public:
   /**
    * External (opaque) sequencer implementation
    */
-  struct Sequencer {
+  struct Sequencer
+  {
     string name;
     Sequencer_implRef p;
 
-    explicit Sequencer(string n)
-      : name(n), p(NULL) {}
-    ~Sequencer() {
+    explicit Sequencer(string n) : name(n), p(NULL)
+    {
+    }
+
+    ~Sequencer()
+    {
     }
 
     /// return a unique string identifier for this sequencer
-    const string& get_name() const {
+    const string& get_name() const
+    {
       return name;
     }
     /// wait for any queued transactions on this sequencer to apply
-    void flush() {
+    void flush()
+    {
       if (p)
-	p->flush();
+        p->flush();
     }
 
     /// @see Sequencer_impl::flush_commit()
-    bool flush_commit(Context *c) {
-      if (!p) {
-	return true;
-      } else {
-	return p->flush_commit(c);
+    bool flush_commit(Context *c)
+    {
+      if (!p)
+      {
+        return true;
+      }
+      else
+      {
+        return p->flush_commit(c);
       }
     }
   };
@@ -590,18 +601,20 @@ public:
       vector<Transaction>& t,
       Context **out_on_applied,
       Context **out_on_commit,
-      Context **out_on_applied_sync) {
+      Context **out_on_applied_sync)
+    {
       assert(out_on_applied);
       assert(out_on_commit);
       assert(out_on_applied_sync);
+
       list<Context *> on_applied, on_commit, on_applied_sync;
-      for (vector<Transaction>::iterator i = t.begin();
-	   i != t.end();
-	   ++i) {
-	on_applied.splice(on_applied.end(), (*i).on_applied);
-	on_commit.splice(on_commit.end(), (*i).on_commit);
-	on_applied_sync.splice(on_applied_sync.end(), (*i).on_applied_sync);
+      for (vector<Transaction>::iterator i = t.begin(); i != t.end(); ++i)
+      {
+        on_applied.splice(on_applied.end(), (*i).on_applied);
+        on_commit.splice(on_commit.end(), (*i).on_commit);
+        on_applied_sync.splice(on_applied_sync.end(), (*i).on_applied_sync);
       }
+
       *out_on_applied = C_Contexts::list_to_context(on_applied);
       *out_on_commit = C_Contexts::list_to_context(on_commit);
       *out_on_applied_sync = C_Contexts::list_to_context(on_applied_sync);
@@ -1868,7 +1881,8 @@ public:
 			 Context *onreadable, Context *ondisk=0,
 			 Context *onreadable_sync=0,
 			 TrackedOpRef op = TrackedOpRef(),
-			 ThreadPool::TPHandle *handle = NULL) {
+			 ThreadPool::TPHandle *handle = NULL) 
+  {
     assert(!tls.empty());
     tls.back().register_on_applied(onreadable);
     tls.back().register_on_commit(ondisk);

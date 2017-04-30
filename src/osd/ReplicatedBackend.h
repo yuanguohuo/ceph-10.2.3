@@ -321,7 +321,8 @@ private:
   /**
    * Client IO
    */
-  struct InProgressOp {
+  struct InProgressOp
+  {
     ceph_tid_t tid;
     set<pg_shard_t> waiting_for_commit;
     set<pg_shard_t> waiting_for_applied;
@@ -329,16 +330,18 @@ private:
     Context *on_applied;
     OpRequestRef op;
     eversion_t v;
-    InProgressOp(
-      ceph_tid_t tid, Context *on_commit, Context *on_applied,
-      OpRequestRef op, eversion_t v)
-      : tid(tid), on_commit(on_commit), on_applied(on_applied),
-	op(op), v(v) {}
-    bool done() const {
-      return waiting_for_commit.empty() &&
-	waiting_for_applied.empty();
+
+    InProgressOp(ceph_tid_t tid, Context *on_commit, Context *on_applied, OpRequestRef op, eversion_t v)
+      : tid(tid), on_commit(on_commit), on_applied(on_applied), op(op), v(v)
+    {
+    }
+
+    bool done() const
+    {
+      return waiting_for_commit.empty() && waiting_for_applied.empty();
     }
   };
+
   map<ceph_tid_t, InProgressOp> in_progress_ops;
 public:
   PGTransaction *get_transaction();
