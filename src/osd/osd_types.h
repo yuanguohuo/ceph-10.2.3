@@ -4016,11 +4016,19 @@ public:
     return locks.empty();
   }
 
-  bool get_lock_type(
-    ObjectContext::RWState::State type,
-    const hobject_t &hoid,
-    ObjectContextRef obc,
-    OpRequestRef op)
+  //Yuanguo:added by yuanguo, to print log in osd/ReplicatedPG.h;
+  const map<hobject_t, string, hobject_t::BitwiseComparator> get_locks() const
+  {
+    map<hobject_t, string, hobject_t::BitwiseComparator> the_locks;
+    for(map<hobject_t, ObcLockManager::ObjectLockState, hobject_t::BitwiseComparator>::const_iterator itr=locks.begin(); itr!=locks.end(); ++itr)
+    {
+      the_locks.insert(make_pair(itr->first, string(ObjectContext::RWState::get_state_name(itr->second.type))));
+    }
+    return the_locks;
+  }
+  //Yuanguo: added by yuanguo
+
+  bool get_lock_type(ObjectContext::RWState::State type, const hobject_t &hoid, ObjectContextRef obc, OpRequestRef op)
   {
     assert(locks.find(hoid) == locks.end());
     if (obc->get_lock_type(op, type))
@@ -4033,53 +4041,56 @@ public:
       return false;
     }
   }
+
   /// Get write lock, ignore starvation
-  bool take_write_lock(
-    const hobject_t &hoid,
-    ObjectContextRef obc) {
+  bool take_write_lock(const hobject_t &hoid, ObjectContextRef obc)
+  {
     assert(locks.find(hoid) == locks.end());
-    if (obc->rwstate.take_write_lock()) {
-      locks.insert(
-	make_pair(
-	  hoid, ObjectLockState(obc, ObjectContext::RWState::RWWRITE)));
+
+    if (obc->rwstate.take_write_lock())
+    {
+      locks.insert(make_pair(hoid, ObjectLockState(obc, ObjectContext::RWState::RWWRITE)));
       return true;
-    } else {
+    }
+    else
+    {
       return false;
     }
   }
+
   /// Get write lock for snap trim
-  bool get_snaptrimmer_write(
-    const hobject_t &hoid,
-    ObjectContextRef obc) {
+  bool get_snaptrimmer_write(const hobject_t &hoid, ObjectContextRef obc)
+  {
     assert(locks.find(hoid) == locks.end());
-    if (obc->get_snaptrimmer_write()) {
-      locks.insert(
-	make_pair(
-	  hoid, ObjectLockState(obc, ObjectContext::RWState::RWWRITE)));
+
+    if (obc->get_snaptrimmer_write())
+    {
+      locks.insert(make_pair(hoid, ObjectLockState(obc, ObjectContext::RWState::RWWRITE)));
       return true;
-    } else {
+    }
+    else
+    {
       return false;
     }
   }
+
   /// Get write lock greedy
-  bool get_write_greedy(
-    const hobject_t &hoid,
-    ObjectContextRef obc,
-    OpRequestRef op) {
+  bool get_write_greedy(const hobject_t &hoid, ObjectContextRef obc, OpRequestRef op)
+  {
     assert(locks.find(hoid) == locks.end());
-    if (obc->get_write_greedy(op)) {
-      locks.insert(
-	make_pair(
-	  hoid, ObjectLockState(obc, ObjectContext::RWState::RWWRITE)));
+
+    if (obc->get_write_greedy(op))
+    {
+      locks.insert(make_pair(hoid, ObjectLockState(obc, ObjectContext::RWState::RWWRITE)));
       return true;
-    } else {
+    }
+    else
+    {
       return false;
     }
   }
-  void put_locks(
-    list<pair<hobject_t, list<OpRequestRef> > > *to_requeue,
-    bool *requeue_recovery,
-    bool *requeue_snaptrimmer)
+
+  void put_locks(list<pair<hobject_t, list<OpRequestRef> > > *to_requeue, bool *requeue_recovery, bool *requeue_snaptrimmer)
   {
     for (auto p: locks)
     {
@@ -4094,7 +4105,8 @@ public:
     locks.clear();
   }
 
-  ~ObcLockManager() {
+  ~ObcLockManager()
+  {
     assert(locks.empty());
   }
 };

@@ -257,7 +257,7 @@ void PG::lock_suspend_timeout(ThreadPool::TPHandle &handle)
 
 void PG::lock(bool no_lockdep) const
 {
-  dout(99) << "YuanguoDbg: PG::lock " << pg_id << dendl;
+  dout(10) << "YuanguoDbg: PG::lock " << pg_id << dendl;
 
   _lock.Lock(no_lockdep);
   // if we have unrecorded dirty state with the lock dropped, there is a bug

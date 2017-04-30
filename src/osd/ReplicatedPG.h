@@ -797,7 +797,7 @@ protected:
      * to get the second.
      */
 
-    generic_dout(99) << "ReplicatedPG::get_rw_locks, write_ordered=" << write_ordered << dendl;
+    generic_dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, write_ordered=" << write_ordered << dendl;
 
     if (write_ordered && ctx->op->may_read())
     {
@@ -818,24 +818,24 @@ protected:
       assert(!ctx->obc->obs.exists);
       if (!ctx->lock_manager.get_lock_type(ctx->lock_type, ctx->snapset_obc->obs.oi.soid, ctx->snapset_obc, ctx->op))
       {
-        generic_dout(99) << "ReplicatedPG::get_rw_locks, failed to lock snapset " << ctx->obc->obs.oi.soid << " with type " << ctx->lock_type << dendl;
+        generic_dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, failed to lock snapset " << ctx->obc->obs.oi.soid << " lock_type=" << ctx->lock_type << dendl;
         ctx->lock_type = ObjectContext::RWState::RWNONE;
         return false;
       }
       else
       {
-        generic_dout(99) << "ReplicatedPG::get_rw_locks, locked snapset " << ctx->obc->obs.oi.soid << " with type " << ctx->lock_type << dendl;
+        generic_dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, succeeded to lock snapset " << ctx->obc->obs.oi.soid << " lock_type=" << ctx->lock_type << dendl;
       }
     }
 
     if (ctx->lock_manager.get_lock_type(ctx->lock_type, ctx->obc->obs.oi.soid, ctx->obc, ctx->op))
     {
-      generic_dout(99) << "ReplicatedPG::get_rw_locks, locked " << ctx->obc->obs.oi.soid << " with type " << ctx->lock_type << dendl;
+      generic_dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, succeeded to lock " << ctx->obc->obs.oi.soid << " lock_type=" << ctx->lock_type << dendl;
       return true;
     }
     else
     {
-      generic_dout(99) << "ReplicatedPG::get_rw_locks, failed to lock " << ctx->obc->obs.oi.soid << " with type " << ctx->lock_type << dendl;
+      generic_dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, failed to lock " << ctx->obc->obs.oi.soid << " lock_type=" << ctx->lock_type << dendl;
       assert(!ctx->snapset_obc);
       ctx->lock_type = ObjectContext::RWState::RWNONE;
       return false;
@@ -865,17 +865,28 @@ protected:
    *
    * @param manager [in] manager with locks to release
    */
-  void release_object_locks(
-    ObcLockManager &lock_manager)
+  void release_object_locks(ObcLockManager &lock_manager)
   {
     list<pair<hobject_t, list<OpRequestRef> > > to_req;
     bool requeue_recovery = false;
     bool requeue_snaptrim = false;
 
+
+    //Yuanguo: print the locks to be released
+    const map<hobject_t, string, hobject_t::BitwiseComparator> locks = lock_manager.get_locks();
+    generic_dout(10) << "YuanguoDbg: ReplicatedPG::release_object_locks, locks.size=" << locks.size() << dendl;
+    for(map<hobject_t, string, hobject_t::BitwiseComparator>::const_iterator itr=locks.begin(); itr!=locks.end(); ++itr)
+    {
+      generic_dout(10) << "YuanguoDbg: ReplicatedPG::release_object_locks, release lock of " << itr->first << " lock_type=" << itr->second << dendl;
+    }
+    //Yuanguo: print the locks to be released
+
     lock_manager.put_locks(&to_req, &requeue_recovery, &requeue_snaptrim);
+
 
     if (requeue_recovery)
       osd->recovery_wq.queue(this);
+
     if (requeue_snaptrim)
       queue_snap_trim();
 
@@ -1330,13 +1341,16 @@ protected:
 
     void finish(int r)
     {
+      generic_dout(10) << "YuanguoDbg: C_OSD_OndiskWriteUnlock::finish, dropping ondisk_write_lock of " << obc->obs.oi.soid << dendl;
       obc->ondisk_write_unlock();
       if (obc2)
       {
+        generic_dout(10) << "YuanguoDbg: C_OSD_OndiskWriteUnlock::finish, dropping ondisk_write_lock of " << obc2->obs.oi.soid << dendl;
         obc2->ondisk_write_unlock();
       }
       if (obc3)
       {
+        generic_dout(10) << "YuanguoDbg: C_OSD_OndiskWriteUnlock::finish, dropping ondisk_write_lock of " << obc3->obs.oi.soid << dendl;
         obc3->ondisk_write_unlock();
       }
     }

@@ -3184,13 +3184,13 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
 
   if (op->may_read())
   {
-    dout(10) << " taking ondisk_read_lock" << dendl;
+    dout(10) << "YuanguoDbg: ReplicatedPG::execute_ctx, taking ondisk_read_lock of " << obc->obs.oi.soid << dendl;
     obc->ondisk_read_lock();
   }
 
   for (map<hobject_t,ObjectContextRef, hobject_t::BitwiseComparator>::iterator p = src_obc.begin(); p != src_obc.end(); ++p)
   {
-    dout(10) << " taking ondisk_read_lock for src " << p->first << dendl;
+    dout(10) << "YuanguoDbg: ReplicatedPG::execute_ctx, taking ondisk_read_lock of src " << p->first << dendl;
     p->second->ondisk_read_lock();
   }
 
@@ -3218,13 +3218,13 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
 
   if (op->may_read())
   {
-    dout(10) << " dropping ondisk_read_lock" << dendl;
+    dout(10) << "YuanguoDbg: ReplicatedPG::execute_ctx, dropping ondisk_read_lock of " << obc->obs.oi.soid << dendl;
     obc->ondisk_read_unlock();
   }
 
   for (map<hobject_t,ObjectContextRef, hobject_t::BitwiseComparator>::iterator p = src_obc.begin(); p != src_obc.end(); ++p)
   {
-    dout(10) << " dropping ondisk_read_lock for src " << p->first << dendl;
+    dout(10) << "YuanguoDbg: ReplicatedPG::execute_ctx, dropping ondisk_read_lock of src " << p->first << dendl;
     p->second->ondisk_read_unlock();
   }
 
@@ -9340,15 +9340,19 @@ void ReplicatedPG::issue_repop(RepGather *repop, OpContext *ctx)
     }
   }
 
+  dout(10) << "YuanguoDbg: ReplicatedPG::issue_repop, taking ondisk_write_lock of " << ctx->obc->obs.oi.soid << dendl;
   ctx->obc->ondisk_write_lock();
+
   if (ctx->clone_obc)
   {
+    dout(10) << "YuanguoDbg: ReplicatedPG::issue_repop, taking ondisk_write_lock of clone " << ctx->clone_obc->obs.oi.soid << dendl;
     ctx->clone_obc->ondisk_write_lock();
   }
 
   bool unlock_snapset_obc = false;
   if (ctx->snapset_obc && ctx->snapset_obc->obs.oi.soid != ctx->obc->obs.oi.soid)
   {
+    dout(10) << "YuanguoDbg: ReplicatedPG::issue_repop, taking ondisk_write_lock of snapset " << ctx->snapset_obc->obs.oi.soid << dendl;
     ctx->snapset_obc->ondisk_write_lock();
     unlock_snapset_obc = true;
   }
@@ -14120,12 +14124,6 @@ void ReplicatedPG::setattrs_maybe_cache(
   PGBackend::PGTransaction *t,
   map<string, bufferlist> &attrs)
 {
-  dout(99) << "YuanguoDbg: ReplicatedPG::setattrs_maybe_cache, attrs.size=" << attrs.size() << dendl;
-  for (map<string, bufferlist>::const_iterator itr = attrs.begin(); itr != attrs.end(); ++itr)
-  {
-    dout(99) << "YuanguoDbg: ReplicatedPG::setattrs_maybe_cache, attrs: " << itr->first << " ==> " << itr->second << dendl;
-  }
-
   if (pool.info.require_rollback())
   {
     for (map<string, bufferlist>::iterator it = attrs.begin(); it != attrs.end(); ++it)
