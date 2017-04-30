@@ -2321,7 +2321,7 @@ void ReplicatedPG::do_op(OpRequestRef& op)
     //Yuanguo: MOSDOp-A and MOSDOp-B of a given object will be sent to the same OSD (omit backup OSDs for now),
     //  but this OSD has multiple threads. The lock here is to prevent more than one threads from accessing the given
     //  object at the same time.
-    dout(99) << " YuanguoDbg: ReplicatedPG::do_op, got rw locks of object: " << m->get_oid() << " lock_type=" << ctx->lock_type << " r=" << r << dendl;
+    dout(99) << " YuanguoDbg: ReplicatedPG::do_op, got rw locks of object " << m->get_oid() << " lock_type=" << ctx->lock_type << " r=" << r << dendl;
   }
 
   if (r) 
@@ -2329,7 +2329,7 @@ void ReplicatedPG::do_op(OpRequestRef& op)
     dout(20) << __func__ << " returned an error: " << r << dendl;
     close_op_ctx(ctx);
 
-    dout(99) << "YuanguoDbg: ReplicatedPG::do_op, released rw locks of object: " << m->get_oid() << " because r=" << r << dendl;
+    dout(99) << "YuanguoDbg: ReplicatedPG::do_op, released rw locks of object " << m->get_oid() << " because r=" << r << dendl;
     osd->reply_op_error(op, r);
     return;
   }
@@ -2365,7 +2365,7 @@ void ReplicatedPG::do_op(OpRequestRef& op)
       fill_in_copy_get_noent(op, oid, m->ops[0], classic);
       close_op_ctx(ctx);
 
-      dout(99) << "YuanguoDbg: ReplicatedPG::do_op, released rw locks of object: " << m->get_oid() 
+      dout(99) << "YuanguoDbg: ReplicatedPG::do_op, released rw locks of object " << m->get_oid() 
                << " because op=CEPH_OSD_OP_COPY_GET_CLASSIC||CEPH_OSD_OP_COPY_GET" << dendl;
       return;
     }
@@ -3238,7 +3238,7 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
   {
     // clean up after the ctx
     close_op_ctx(ctx);
-    dout(99) << "YuanguoDbg: ReplicatedPG::execute_ctx, released rw locks of object: " << m->get_oid() << " because result==-EAGAIN" << dendl;
+    dout(99) << "YuanguoDbg: ReplicatedPG::execute_ctx, released rw locks of object " << m->get_oid() << " because result==-EAGAIN" << dendl;
     return;
   }
 
@@ -7718,7 +7718,7 @@ void ReplicatedPG::complete_read_ctx(int result, OpContext *ctx)
   //               ReplicatedPG::do_op  -->
   //               get_rw_locks
   //Yuanguo: yes, for RD operations;
-  dout(99) << "YuanguoDbg: ReplicatedPG::complete_read_ctx, released rw locks of object: " << m->get_oid() << dendl;
+  dout(99) << "YuanguoDbg: ReplicatedPG::complete_read_ctx, released rw locks of object " << m->get_oid() << dendl;
 }
 
 // ========================================================================
@@ -9448,7 +9448,7 @@ void ReplicatedPG::remove_repop(RepGather *repop)
   //               ReplicatedPG::do_op  -->
   //               get_rw_locks
   //Yuanguo: yes, for WR operations, and CALL operations with write op;
-  dout(99) << "YuanguoDbg: ReplicatedPG::remove_repop, released rw locks of object: " << repop->hoid.oid << dendl;
+  dout(99) << "YuanguoDbg: ReplicatedPG::remove_repop, released rw locks of object " << repop->hoid.oid << dendl;
 
   repop->put();
 

@@ -8665,6 +8665,7 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb )
     Mutex::Locker l(sdata->sdata_op_ordering_lock);
     if (!sdata->pg_for_processing.count(&*(item.first)))
     {
+      dout(10) << "YuanguoDbg: OSD::ShardedOpWQ::_process, no op, unlock PG " << (item.first)->get_pgid() << dendl;
       (item.first)->unlock();
       return;
     }
@@ -8712,6 +8713,7 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb )
     tracepoint(osd, opwq_process_finish, reqid.name._type, reqid.name._num, reqid.tid, reqid.inc);
   }
 
+  dout(10) << "YuanguoDbg: OSD::ShardedOpWQ::_process, op done, unlock PG " << (item.first)->get_pgid() << dendl;
   (item.first)->unlock();
 }
 

@@ -272,7 +272,7 @@ public:
   void lock(bool no_lockdep = false) const;
   void unlock() const
   {
-    generic_dout(10) << "YuanguoDbg: PG::unlock " << pg_id << dendl;
+    generic_dout(10) << "YuanguoDbg: PG::unlock, unlock PG " << pg_id << dendl;
 
     //generic_dout(0) << this << " " << info.pgid << " unlock" << dendl;
     assert(!dirty_info);
