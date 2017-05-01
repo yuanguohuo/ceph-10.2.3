@@ -3264,7 +3264,7 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
   ctx->reply->set_result(result);
 
   // Yuanguo: only write and cache ops are put in the transaction (ctx->op_t), so if
-  // ctx->op_t is empty, there are no write or cache ops, only read ops;
+  // ctx->op_t is empty, there are no write or cache ops, only read ops; or there is error.
   // read or error?
   if (ctx->op_t->empty() || result < 0)
   {
@@ -3280,6 +3280,15 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
     {
       in_progress_async_reads.push_back(make_pair(op, ctx));
       ctx->start_async_reads(this);
+    }
+
+    if(result >=0)
+    {
+      dout(99) << "YuanguoDbg: ReplicatedPG::execute_ctx, return because there's no write" << dendl;
+    }
+    else
+    {
+      dout(99) << "YuanguoDbg: ReplicatedPG::execute_ctx, return because of error:" << result << dendl;
     }
 
     //Yuanguo: if there are only read ops, finished.
