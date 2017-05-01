@@ -41,6 +41,10 @@
 #include "ReplicatedBackend.h"
 #include "ECBackend.h"
 
+
+//Yuanguo: added by yuanguo to enable log
+#define dout_subsys ceph_subsys_osd
+
 class MOSDSubOpReply;
 
 class CopyFromCallback;
@@ -818,24 +822,24 @@ protected:
       assert(!ctx->obc->obs.exists);
       if (!ctx->lock_manager.get_lock_type(ctx->lock_type, ctx->snapset_obc->obs.oi.soid, ctx->snapset_obc, ctx->op))
       {
-        dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, failed to lock snapset " << ctx->obc->obs.oi.soid << " lock_type=" << ctx->lock_type << dendl;
+        dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, failed to lock snapset " << ctx->obc->obs.oi.soid << " lock_type=" << ObjectContext::RWState::get_state_name(ctx->lock_type) << dendl;
         ctx->lock_type = ObjectContext::RWState::RWNONE;
         return false;
       }
       else
       {
-        dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, succeeded to lock snapset " << ctx->obc->obs.oi.soid << " lock_type=" << ctx->lock_type << dendl;
+        dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, succeeded to lock snapset " << ctx->obc->obs.oi.soid << " lock_type=" << ObjectContext::RWState::get_state_name(ctx->lock_type) << dendl;
       }
     }
 
     if (ctx->lock_manager.get_lock_type(ctx->lock_type, ctx->obc->obs.oi.soid, ctx->obc, ctx->op))
     {
-      dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, succeeded to lock " << ctx->obc->obs.oi.soid << " lock_type=" << ctx->lock_type << dendl;
+      dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, succeeded to lock " << ctx->obc->obs.oi.soid << " lock_type=" << ObjectContext::RWState::get_state_name(ctx->lock_type) << dendl;
       return true;
     }
     else
     {
-      dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, failed to lock " << ctx->obc->obs.oi.soid << " lock_type=" << ctx->lock_type << dendl;
+      dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, failed to lock " << ctx->obc->obs.oi.soid << " lock_type=" << ObjectContext::RWState::get_state_name(ctx->lock_type) << dendl;
       assert(!ctx->snapset_obc);
       ctx->lock_type = ObjectContext::RWState::RWNONE;
       return false;
@@ -1757,5 +1761,8 @@ inline ostream& operator<<(ostream& out, ReplicatedPG::ProxyWriteOpRef pwop)
 void intrusive_ptr_add_ref(ReplicatedPG::RepGather *repop);
 void intrusive_ptr_release(ReplicatedPG::RepGather *repop);
 
+
+//Yuanguo: added by yuanguo to enable log
+#undef dout_subsys
 
 #endif

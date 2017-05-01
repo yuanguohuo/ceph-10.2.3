@@ -58,6 +58,8 @@ using namespace std;
 #include "include/unordered_map.h"
 #include "include/unordered_set.h"
 
+//Yuanguo: added by yuanguo to enable log
+#define dout_subsys ceph_subsys_osd
 
 //#define DEBUG_RECOVERY_OIDS   // track set of recovering oids explicitly, to find counting bugs
 
@@ -272,7 +274,7 @@ public:
   void lock(bool no_lockdep = false) const;
   void unlock() const
   {
-    generic_dout(10) << "YuanguoDbg: PG::unlock, unlock PG " << pg_id << dendl;
+    dout(10) << "YuanguoDbg: PG::unlock, unlock PG " << pg_id << dendl;
 
     //generic_dout(0) << this << " " << info.pgid << " unlock" << dendl;
     assert(!dirty_info);
@@ -2416,5 +2418,8 @@ public:
 ostream& operator<<(ostream& out, const PG& pg);
 
 ostream& operator<<(ostream& out, const PG::BackfillInterval& bi);
+
+//Yuanguo: added by yuanguo to enable log
+#undef dout_subsys
 
 #endif
