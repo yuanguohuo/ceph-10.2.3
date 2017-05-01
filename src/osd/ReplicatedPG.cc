@@ -4599,7 +4599,16 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
           else if (pool.info.require_rollback())
           {
             //Yuanguo: why require_rollback() => async ?
-            //Answer: ???
+            //Answer: 
+            //    See 
+            //       1. implementation of pg_pool_t::require_rollback()
+            //                 return ec_pool() || flags & FLAG_DEBUG_FAKE_EC_POOL;
+            //       2. CEPH_OSD_OP_SPARSE_READ below
+            // It seems that only EC POOL (or op with FLAG_DEBUG_FAKE_EC_POOL) supports async read;
+            //
+            // And, the 'async' here shoud be different from the "rados_aio_*" in include/rados/librados.h, 
+            // the latter means that, the client doesn't wait for the op, but use a callback (completion structure)
+            // to handle the result;
 
             async = true;
             boost::optional<uint32_t> maybe_crc;
@@ -4614,7 +4623,6 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
             {
               maybe_crc = oi.data_digest;
             }
-
 
             //Yuanguo: pending_async_reads: <off, len, op_flags> -> <outbl, outr>
             ctx->pending_async_reads.push_back(
