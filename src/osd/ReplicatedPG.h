@@ -287,23 +287,34 @@ public:
   void failed_push(pg_shard_t from, const hobject_t &soid);
   void cancel_pull(const hobject_t &soid);
 
+
   template <typename T>
-  class BlessedGenContext : public GenContext<T> {
+  class BlessedGenContext : public GenContext<T>
+  {
     ReplicatedPGRef pg;
     GenContext<T> *c;
     epoch_t e;
+
   public:
     BlessedGenContext(ReplicatedPG *pg, GenContext<T> *c, epoch_t e)
-      : pg(pg), c(c), e(e) {}
-    void finish(T t) {
+      : pg(pg), c(c), e(e)
+    {
+    }
+
+    void finish(T t)
+    {
       pg->lock();
+
       if (pg->pg_has_reset_since(e))
-	delete c;
+        delete c;
       else
-	c->complete(t);
+        c->complete(t);
+
       pg->unlock();
     }
   };
+
+
   class BlessedContext : public Context {
     ReplicatedPGRef pg;
     Context *c;
@@ -323,10 +334,10 @@ public:
   Context *bless_context(Context *c) {
     return new BlessedContext(this, c, get_osdmap()->get_epoch());
   }
-  GenContext<ThreadPool::TPHandle&> *bless_gencontext(
-    GenContext<ThreadPool::TPHandle&> *c) {
-    return new BlessedGenContext<ThreadPool::TPHandle&>(
-      this, c, get_osdmap()->get_epoch());
+
+  GenContext<ThreadPool::TPHandle&> *bless_gencontext(GenContext<ThreadPool::TPHandle&> *c)
+  {
+    return new BlessedGenContext<ThreadPool::TPHandle&>(this, c, get_osdmap()->get_epoch());
   }
     
   void send_message(int to_osd, Message *m) {
@@ -615,8 +626,8 @@ public:
     }
 
     // pending async reads <off, len, op_flags> -> <outbl, outr>
-    list<pair<boost::tuple<uint64_t, uint64_t, unsigned>,
-	      pair<bufferlist*, Context*> > > pending_async_reads;
+    list<pair<boost::tuple<uint64_t, uint64_t, unsigned>, pair<bufferlist*, Context*> > > pending_async_reads;
+
     int async_read_result;
     unsigned inflightreads;
     friend struct OnReadComplete;

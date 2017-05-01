@@ -2077,6 +2077,7 @@ public:
     bufferlist& bl,
     uint32_t op_flags = 0,
     bool allow_eio = false) = 0;
+
    virtual int read(
      CollectionHandle &c,
      const ghobject_t& oid,

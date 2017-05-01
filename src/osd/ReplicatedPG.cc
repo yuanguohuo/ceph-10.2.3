@@ -114,10 +114,11 @@ struct OnReadComplete : public Context {
 void ReplicatedPG::OpContext::start_async_reads(ReplicatedPG *pg)
 {
   inflightreads = 1;
-  pg->pgbackend->objects_read_async(
-    obc->obs.oi.soid,
-    pending_async_reads,
-    new OnReadComplete(pg, this), pg->get_pool().fast_read);
+
+  //Yuanguo: async read ops were pushed in pending_async_reads list, see 
+  //    ReplicatedPG::do_osd_ops 
+  pg->pgbackend->objects_read_async(obc->obs.oi.soid, pending_async_reads, new OnReadComplete(pg, this), pg->get_pool().fast_read);
+
   pending_async_reads.clear();
 }
 void ReplicatedPG::OpContext::finish_read(ReplicatedPG *pg)
@@ -3272,6 +3273,8 @@ void ReplicatedPG::execute_ctx(OpContext *ctx)
     if (result == 0)
       do_osd_op_effects(ctx, m->get_connection());
 
+    //Yuanguo: async read ops were pushed in pending_async_reads list, see 
+    //    ReplicatedPG::do_osd_ops 
     if (ctx->pending_async_reads.empty())
     {
       complete_read_ctx(result, ctx);
@@ -4314,7 +4317,8 @@ static int check_offset_and_length(uint64_t offset, uint64_t length, uint64_t ma
   return 0;
 }
 
-struct FillInVerifyExtent : public Context {
+struct FillInVerifyExtent : public Context
+{
   ceph_le64 *r;
   int32_t *rval;
   bufferlist *outdatap;
@@ -4323,27 +4327,41 @@ struct FillInVerifyExtent : public Context {
   OSDService *osd;
   hobject_t soid;
   __le32 flags;
-  FillInVerifyExtent(ceph_le64 *r, int32_t *rv, bufferlist *blp,
-		     boost::optional<uint32_t> mc, uint64_t size,
-		     OSDService *osd, hobject_t soid, __le32 flags) :
-    r(r), rval(rv), outdatap(blp), maybe_crc(mc),
-    size(size), osd(osd), soid(soid), flags(flags) {}
-  void finish(int len) {
+
+  FillInVerifyExtent(
+      ceph_le64 *r, 
+      int32_t *rv, 
+      bufferlist *blp, 
+      boost::optional<uint32_t> mc, 
+      uint64_t size, 
+      OSDService *osd, 
+      hobject_t soid, __le32 flags) :
+                 r(r), rval(rv), outdatap(blp), maybe_crc(mc),
+                 size(size), osd(osd), soid(soid), flags(flags)
+  {
+  }
+
+  void finish(int len)
+  {
     *rval = len;
     *r = len;
+
     if (len < 0)
       return;
+
     // whole object?  can we verify the checksum?
-    if (maybe_crc && *r == size) {
+    if (maybe_crc && *r == size)
+    {
       uint32_t crc = outdatap->crc32c(-1);
-      if (maybe_crc != crc) {
-        osd->clog->error() << std::hex << " full-object read crc 0x" << crc
-			   << " != expected 0x" << *maybe_crc
-			   << std::dec << " on " << soid << "\n";
-        if (!(flags & CEPH_OSD_OP_FLAG_FAILOK)) {
-	  *rval = -EIO;
-	  *r = 0;
-	}
+      if (maybe_crc != crc)
+      {
+        osd->clog->error() << std::hex << " full-object read crc 0x" << crc << " != expected 0x" << *maybe_crc << std::dec << " on " << soid << "\n";
+
+        if (!(flags & CEPH_OSD_OP_FLAG_FAILOK))
+        {
+          *rval = -EIO;
+          *r = 0;
+        }
       }
     }
   }
@@ -4597,12 +4615,12 @@ int ReplicatedPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
               maybe_crc = oi.data_digest;
             }
 
+
+            //Yuanguo: pending_async_reads: <off, len, op_flags> -> <outbl, outr>
             ctx->pending_async_reads.push_back(
                 make_pair(
-                  boost::make_tuple(op.extent.offset, op.extent.length, op.flags),
-                  make_pair(
-                    &osd_op.outdata,
-                    new FillInVerifyExtent(&op.extent.length, &osd_op.rval, &osd_op.outdata, maybe_crc, oi.size, osd, soid, op.flags)
+                  boost::make_tuple(op.extent.offset, op.extent.length, op.flags),    //Yuanguo:  offset, len, op_flags
+                  make_pair(&osd_op.outdata, new FillInVerifyExtent(&op.extent.length, &osd_op.rval, &osd_op.outdata, maybe_crc, oi.size, osd, soid, op.flags)   //Yuanguo: outbl,  outr
                   )
                 )
             );

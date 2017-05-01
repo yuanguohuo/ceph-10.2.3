@@ -259,22 +259,30 @@ int ReplicatedBackend::objects_read_sync(
   return store->read(ch, ghobject_t(hoid), off, len, *bl, op_flags);
 }
 
-struct AsyncReadCallback : public GenContext<ThreadPool::TPHandle&> {
+struct AsyncReadCallback : public GenContext<ThreadPool::TPHandle&>
+{
   int r;
   Context *c;
+
   AsyncReadCallback(int r, Context *c) : r(r), c(c) {}
-  void finish(ThreadPool::TPHandle&) {
+
+  void finish(ThreadPool::TPHandle&)
+  {
     c->complete(r);
     c = NULL;
   }
-  ~AsyncReadCallback() {
+
+  ~AsyncReadCallback()
+  {
     delete c;
   }
 };
+
+ 
+//Yuanguo: to_read: <off, len, op_flags> -> <outbl, outr>
 void ReplicatedBackend::objects_read_async(
   const hobject_t &hoid,
-  const list<pair<boost::tuple<uint64_t, uint64_t, uint32_t>,
-		  pair<bufferlist*, Context*> > > &to_read,
+  const list<pair<boost::tuple<uint64_t, uint64_t, uint32_t>, pair<bufferlist*, Context*> > > &to_read,
   Context *on_complete,
   bool fast_read)
 {
@@ -282,25 +290,35 @@ void ReplicatedBackend::objects_read_async(
   assert(!fast_read);
 
   int r = 0;
-  for (list<pair<boost::tuple<uint64_t, uint64_t, uint32_t>,
-		 pair<bufferlist*, Context*> > >::const_iterator i =
-	   to_read.begin();
-       i != to_read.end() && r >= 0;
-       ++i) {
-    int _r = store->read(ch, ghobject_t(hoid), i->first.get<0>(),
-			 i->first.get<1>(), *(i->second.first),
-			 i->first.get<2>());
-    if (i->second.second) {
-      get_parent()->schedule_recovery_work(
-	get_parent()->bless_gencontext(
-	  new AsyncReadCallback(_r, i->second.second)));
+  for (list<pair<boost::tuple<uint64_t, uint64_t, uint32_t>, pair<bufferlist*, Context*> > >::const_iterator i = to_read.begin(); i != to_read.end() && r >= 0; ++i)
+  {
+    dout(99) << "YuanguoDbg: ReplicatedBackend::objects_read_async, read, oid:" << ghobject_t(hoid) << " offset:" << i->first.get<0>() << " len:" << i->first.get<1>() << " op_flags:" << i->first.get<2>() << dendl;
+
+    //Yuanguo: this doesn't seem like async read ... ??? 
+
+    //Yuanguo:  CollectionHandle,   oid,          offset,            len,               outbl,              op_flags
+    int _r = store->read(ch, ghobject_t(hoid), i->first.get<0>(), i->first.get<1>(), *(i->second.first), i->first.get<2>());
+
+    dout(99) << "YuanguoDbg: ReplicatedBackend::objects_read_async, read finished, _r=" << _r << " oid:" << ghobject_t(hoid) << " offset:" << i->first.get<0>() << " len:" << i->first.get<1>() << " op_flags:" << i->first.get<2>() << dendl;
+
+    if (i->second.second)
+    {
+      //Yuanguo: it seems that the "read op" is sync, but the "verifying" is async;
+
+      // Yuanguo: 
+      //    _r:  number of bytes just read;
+      //    i->second.second: FillInVerifyExtent, see ReplicatedPG::do_osd_ops;
+      get_parent()->schedule_recovery_work(get_parent()->bless_gencontext(new AsyncReadCallback(_r, i->second.second)));
     }
+
     if (_r < 0)
       r = _r;
   }
-  get_parent()->schedule_recovery_work(
-    get_parent()->bless_gencontext(
-      new AsyncReadCallback(r, on_complete)));
+
+  //Yuanguo: 
+  //    r: the status code, 0 for success; negative for error;
+  //    on_complete is OnReadComplete, see caller ReplicatedPG::OpContext::start_async_reads
+  get_parent()->schedule_recovery_work(get_parent()->bless_gencontext(new AsyncReadCallback(r, on_complete)));
 }
 
 
