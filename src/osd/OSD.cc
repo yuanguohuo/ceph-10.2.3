@@ -8697,7 +8697,7 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb )
   //Yuanguo: added by Yuanguo 
   if (boost::optional<OpRequestRef> _op = op->maybe_get_op())
   {
-    lgeneric_subdout(osd->cct, osd, 10) << "YuanguoDbg: OSD::ShardedOpWQ::_process, have got op to process " << *(*_op->get_req()) << dendl;
+    lgeneric_subdout(osd->cct, osd, 10) << "YuanguoDbg: OSD::ShardedOpWQ::_process, have got op to process " << *((*_op)->get_req()) << dendl;
   }
   else
   {
@@ -8731,7 +8731,7 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb )
   //Yuanguo: added by Yuanguo 
   if (boost::optional<OpRequestRef> _op = op->maybe_get_op())
   {
-    lgeneric_subdout(osd->cct, osd, 10) << "YuanguoDbg: OSD::ShardedOpWQ::_process, finished processing op " << *(*_op->get_req()) << dendl;
+    lgeneric_subdout(osd->cct, osd, 10) << "YuanguoDbg: OSD::ShardedOpWQ::_process, finished processing op " << *((*_op)->get_req()) << dendl;
   }
   else
   {
