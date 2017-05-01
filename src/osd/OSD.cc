@@ -8673,8 +8673,6 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb )
     assert(sdata->pg_for_processing[&*(item.first)].size());
     op = sdata->pg_for_processing[&*(item.first)].front();
 
-    lgeneric_subdout(osd->cct, osd, 10) << "YuanguoDbg: OSD::ShardedOpWQ::_process, have got op to process" << dendl;
-
     sdata->pg_for_processing[&*(item.first)].pop_front();
     if (!(sdata->pg_for_processing[&*(item.first)].size()))
     {
@@ -8694,6 +8692,19 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb )
 #endif
     tracepoint(osd, opwq_process_start, reqid.name._type, reqid.name._num, reqid.tid, reqid.inc);
   }
+
+
+  //Yuanguo: added by Yuanguo 
+  if (boost::optional<OpRequestRef> _op = op->maybe_get_op())
+  {
+    lgeneric_subdout(osd->cct, osd, 10) << "YuanguoDbg: OSD::ShardedOpWQ::_process, have got op to process " << *(_op->get_req()) << dendl;
+  }
+  else
+  {
+    lgeneric_subdout(osd->cct, osd, 10) << "YuanguoDbg: OSD::ShardedOpWQ::_process, have got op, no op ??" << dendl;
+  }
+  //Yuanguo: added by Yuanguo 
+
 
   lgeneric_subdout(osd->cct, osd, 30) << "dequeue status: ";
   Formatter *f = Formatter::create("json");
@@ -8716,6 +8727,18 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb )
 #endif
     tracepoint(osd, opwq_process_finish, reqid.name._type, reqid.name._num, reqid.tid, reqid.inc);
   }
+
+  //Yuanguo: added by Yuanguo 
+  if (boost::optional<OpRequestRef> _op = op->maybe_get_op())
+  {
+    lgeneric_subdout(osd->cct, osd, 10) << "YuanguoDbg: OSD::ShardedOpWQ::_process, finished processing op " << *(_op->get_req()) << dendl;
+  }
+  else
+  {
+    lgeneric_subdout(osd->cct, osd, 10) << "YuanguoDbg: OSD::ShardedOpWQ::_process, finished processing, no op ??" << dendl;
+  }
+  //Yuanguo: added by Yuanguo 
+
 
   lgeneric_subdout(osd->cct, osd, 10) << "YuanguoDbg: OSD::ShardedOpWQ::_process, op done, unlock PG " << (item.first)->get_pgid() << dendl;
   (item.first)->unlock();

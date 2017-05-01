@@ -124,7 +124,8 @@ public:
   bool currently_sub_op_sent() { return latest_flag_point & flag_sub_op_sent; }
   bool currently_commit_sent() { return latest_flag_point & flag_commit_sent; }
 
-  const char *state_string() const {
+  const char *state_string() const
+  {
     switch(latest_flag_point) {
     case flag_queued_for_pg: return "queued for pg";
     case flag_reached_pg: return "reached pg";
