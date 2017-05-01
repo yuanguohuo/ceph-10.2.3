@@ -822,24 +822,24 @@ protected:
       assert(!ctx->obc->obs.exists);
       if (!ctx->lock_manager.get_lock_type(ctx->lock_type, ctx->snapset_obc->obs.oi.soid, ctx->snapset_obc, ctx->op))
       {
-        dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, failed to lock snapset " << ctx->obc->obs.oi.soid << " lock_type=" << ObjectContext::RWState::get_state_name(ctx->lock_type) << dendl;
+        dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, failed to get rw locks of snapset " << ctx->obc->obs.oi.soid << " lock_type=" << ObjectContext::RWState::get_state_name(ctx->lock_type) << dendl;
         ctx->lock_type = ObjectContext::RWState::RWNONE;
         return false;
       }
       else
       {
-        dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, succeeded to lock snapset " << ctx->obc->obs.oi.soid << " lock_type=" << ObjectContext::RWState::get_state_name(ctx->lock_type) << dendl;
+        dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, succeeded to get rw locks of snapset " << ctx->obc->obs.oi.soid << " lock_type=" << ObjectContext::RWState::get_state_name(ctx->lock_type) << dendl;
       }
     }
 
     if (ctx->lock_manager.get_lock_type(ctx->lock_type, ctx->obc->obs.oi.soid, ctx->obc, ctx->op))
     {
-      dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, succeeded to lock " << ctx->obc->obs.oi.soid << " lock_type=" << ObjectContext::RWState::get_state_name(ctx->lock_type) << dendl;
+      dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, succeeded to get rw locks of " << ctx->obc->obs.oi.soid << " lock_type=" << ObjectContext::RWState::get_state_name(ctx->lock_type) << dendl;
       return true;
     }
     else
     {
-      dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, failed to lock " << ctx->obc->obs.oi.soid << " lock_type=" << ObjectContext::RWState::get_state_name(ctx->lock_type) << dendl;
+      dout(10) << "YuanguoDbg: ReplicatedPG::get_rw_locks, failed to get rw locks of " << ctx->obc->obs.oi.soid << " lock_type=" << ObjectContext::RWState::get_state_name(ctx->lock_type) << dendl;
       assert(!ctx->snapset_obc);
       ctx->lock_type = ObjectContext::RWState::RWNONE;
       return false;
@@ -878,10 +878,10 @@ protected:
 
     //Yuanguo: print the locks to be released
     const map<hobject_t, string, hobject_t::BitwiseComparator> locks = lock_manager.get_locks();
-    dout(10) << "YuanguoDbg: ReplicatedPG::release_object_locks, locks.size=" << locks.size() << dendl;
+    dout(10) << "YuanguoDbg: ReplicatedPG::release_object_locks, rw locks size=" << locks.size() << dendl;
     for(map<hobject_t, string, hobject_t::BitwiseComparator>::const_iterator itr=locks.begin(); itr!=locks.end(); ++itr)
     {
-      dout(10) << "YuanguoDbg: ReplicatedPG::release_object_locks, release lock of " << itr->first << " lock_type=" << itr->second << dendl;
+      dout(10) << "YuanguoDbg: ReplicatedPG::release_object_locks, release rw locks of " << itr->first << " lock_type=" << itr->second << dendl;
     }
     //Yuanguo: print the locks to be released
 
