@@ -8657,7 +8657,7 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb )
 
   ThreadPool::TPHandle tp_handle(osd->cct, hb, timeout_interval, suicide_interval);
 
-  lgeneric_subdout(osd->cct, osd, 10) << "YuanguoDbg: OSD::ShardedOpWQ::_process, process op, lock PG " << (item.first)->get_pgid() << dendl;
+  lgeneric_subdout(osd->cct, osd, 10) << "YuanguoDbg: OSD::ShardedOpWQ::_process, get op to process, lock PG " << (item.first)->get_pgid() << dendl;
   (item.first)->lock_suspend_timeout(tp_handle);
 
   boost::optional<PGQueueable> op;
@@ -8672,6 +8672,9 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb )
     }
     assert(sdata->pg_for_processing[&*(item.first)].size());
     op = sdata->pg_for_processing[&*(item.first)].front();
+
+    lgeneric_subdout(osd->cct, osd, 10) << "YuanguoDbg: OSD::ShardedOpWQ::_process, have got op to process" << dendl;
+
     sdata->pg_for_processing[&*(item.first)].pop_front();
     if (!(sdata->pg_for_processing[&*(item.first)].size()))
     {
