@@ -1326,7 +1326,10 @@ SnapContext pg_pool_t::get_snap_context() const
 uint32_t pg_pool_t::hash_key(const string& key, const string& ns) const
 {
  if (ns.empty()) 
+ {
     return ceph_str_hash(object_hash, key.data(), key.length());
+ }
+
   int nsl = ns.length();
   int len = key.length() + nsl + 1;
   char buf[len];

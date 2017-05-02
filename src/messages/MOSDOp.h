@@ -31,7 +31,8 @@
 
 class OSD;
 
-class MOSDOp : public Message {
+class MOSDOp : public Message
+{
 
   static const int HEAD_VERSION = 7;
   static const int COMPAT_VERSION = 3;
@@ -158,66 +159,87 @@ public:
   MOSDOp()
     : Message(CEPH_MSG_OSD_OP, HEAD_VERSION, COMPAT_VERSION),
       partial_decode_needed(true),
-      final_decode_needed(true) { }
-  MOSDOp(int inc, long tid,
-         object_t& _oid, object_locator_t& _oloc, pg_t& _pgid,
-	 epoch_t _osdmap_epoch,
-	 int _flags, uint64_t feat)
+      final_decode_needed(true)
+  {}
+
+  MOSDOp(int inc, long tid, object_t& _oid, object_locator_t& _oloc, pg_t& _pgid, epoch_t _osdmap_epoch, int _flags, uint64_t feat)
     : Message(CEPH_MSG_OSD_OP, HEAD_VERSION, COMPAT_VERSION),
       client_inc(inc),
-      osdmap_epoch(_osdmap_epoch), flags(_flags), retry_attempt(-1),
-      oid(_oid), oloc(_oloc), pgid(_pgid),
+      osdmap_epoch(_osdmap_epoch), 
+      flags(_flags), 
+      retry_attempt(-1),
+      oid(_oid), 
+      oloc(_oloc), 
+      pgid(_pgid),
       partial_decode_needed(false),
       final_decode_needed(false),
-      features(feat) {
+      features(feat)
+  {
     set_tid(tid);
 
     // also put the client_inc in reqid.inc, so that get_reqid() can
     // be used before the full message is decoded.
     reqid.inc = inc;
   }
+
 private:
   ~MOSDOp() {}
 
 public:
   void set_version(eversion_t v) { reassert_version = v; }
   void set_mtime(utime_t mt) { mtime = mt; }
-  void set_mtime(ceph::real_time mt) {
+
+  void set_mtime(ceph::real_time mt)
+  {
     mtime = ceph::real_clock::to_timespec(mt);
   }
 
   // ops
-  void add_simple_op(int o, uint64_t off, uint64_t len) {
+  void add_simple_op(int o, uint64_t off, uint64_t len)
+  {
     OSDOp osd_op;
     osd_op.op.op = o;
     osd_op.op.extent.offset = off;
     osd_op.op.extent.length = len;
     ops.push_back(osd_op);
   }
-  void write(uint64_t off, uint64_t len, bufferlist& bl) {
+
+  void write(uint64_t off, uint64_t len, bufferlist& bl)
+  {
     add_simple_op(CEPH_OSD_OP_WRITE, off, len);
     data.claim(bl);
     header.data_off = off;
   }
-  void writefull(bufferlist& bl) {
+
+  void writefull(bufferlist& bl)
+  {
     add_simple_op(CEPH_OSD_OP_WRITEFULL, 0, bl.length());
     data.claim(bl);
     header.data_off = 0;
   }
-  void zero(uint64_t off, uint64_t len) {
+
+  void zero(uint64_t off, uint64_t len)
+  {
     add_simple_op(CEPH_OSD_OP_ZERO, off, len);
   }
-  void truncate(uint64_t off) {
+
+  void truncate(uint64_t off)
+  {
     add_simple_op(CEPH_OSD_OP_TRUNCATE, off, 0);
   }
-  void remove() {
+
+  void remove()
+  {
     add_simple_op(CEPH_OSD_OP_DELETE, 0, 0);
   }
 
-  void read(uint64_t off, uint64_t len) {
+  void read(uint64_t off, uint64_t len)
+  {
     add_simple_op(CEPH_OSD_OP_READ, off, len);
   }
-  void stat() {
+
+  void stat()
+  {
     add_simple_op(CEPH_OSD_OP_STAT, 0, 0);
   }
 
@@ -231,7 +253,9 @@ public:
   void set_want_ondisk(bool b) { flags |= CEPH_OSD_FLAG_ONDISK; }
 
   bool is_retry_attempt() const { return flags & CEPH_OSD_FLAG_RETRY; }
-  void set_retry_attempt(unsigned a) { 
+
+  void set_retry_attempt(unsigned a)
+  { 
     if (a)
       flags |= CEPH_OSD_FLAG_RETRY;
     else

@@ -659,8 +659,7 @@ int librados::IoCtxImpl::clone_range(const object_t& dst_oid,
 int librados::IoCtxImpl::operate(const object_t& oid, ::ObjectOperation *o,
 				 ceph::real_time *pmtime, int flags)
 {
-  ceph::real_time ut = (pmtime ? *pmtime :
-    ceph::real_clock::now(client->cct));
+  ceph::real_time ut = (pmtime ? *pmtime : ceph::real_clock::now(client->cct));
 
   /* can't write to a snapshot */
   if (snap_seq != CEPH_NOSNAP)
@@ -678,20 +677,24 @@ int librados::IoCtxImpl::operate(const object_t& oid, ::ObjectOperation *o,
   Context *oncommit = new C_SafeCond(&mylock, &cond, &done, &r);
 
   int op = o->ops[0].op.op;
-  ldout(client->cct, 10) << ceph_osd_op_name(op) << " oid=" << oid
-			 << " nspace=" << oloc.nspace << dendl;
-  Objecter::Op *objecter_op = objecter->prepare_mutate_op(oid, oloc,
-							  *o, snapc, ut, flags,
-							  NULL, oncommit, &ver);
+
+  ldout(client->cct, 10) << ceph_osd_op_name(op) << " oid=" << oid << " nspace=" << oloc.nspace << dendl;
+
+  Objecter::Op *objecter_op = objecter->prepare_mutate_op(oid, oloc, *o, snapc, ut, flags, NULL, oncommit, &ver);
+
   objecter->op_submit(objecter_op);
 
   mylock.Lock();
   while (!done)
+  {
     cond.Wait(mylock);
+  }
   mylock.Unlock();
-  ldout(client->cct, 10) << "Objecter returned from "
-	<< ceph_osd_op_name(op) << " r=" << r << dendl;
 
+  ldout(client->cct, 10) << "Objecter returned from " << ceph_osd_op_name(op) << " r=" << r << dendl;
+
+
+  ldout(client->cct, 99) << "YuanguoDbg: librados::IoCtxImpl::operate, ver=" << ver << dendl;
   set_sync_op_version(ver);
 
   return r;
@@ -715,18 +718,19 @@ int librados::IoCtxImpl::operate_read(const object_t& oid,
 
   int op = o->ops[0].op.op;
   ldout(client->cct, 10) << ceph_osd_op_name(op) << " oid=" << oid << " nspace=" << oloc.nspace << dendl;
-  Objecter::Op *objecter_op = objecter->prepare_read_op(oid, oloc,
-	                                      *o, snap_seq, pbl, flags,
-	                                      onack, &ver);
+  Objecter::Op *objecter_op = objecter->prepare_read_op(oid, oloc, *o, snap_seq, pbl, flags, onack, &ver);
   objecter->op_submit(objecter_op);
 
   mylock.Lock();
   while (!done)
+  {
     cond.Wait(mylock);
+  }
   mylock.Unlock();
-  ldout(client->cct, 10) << "Objecter returned from "
-	<< ceph_osd_op_name(op) << " r=" << r << dendl;
 
+  ldout(client->cct, 10) << "Objecter returned from " << ceph_osd_op_name(op) << " r=" << r << dendl;
+
+  ldout(client->cct, 99) << "YuanguoDbg: librados::IoCtxImpl::operate_read, ver=" << ver << dendl;
   set_sync_op_version(ver);
 
   return r;

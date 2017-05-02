@@ -1464,24 +1464,32 @@ int OSDMap::apply_incremental(const Incremental &inc)
 }
 
 // mapping
-int OSDMap::object_locator_to_pg(
-	const object_t& oid,
-	const object_locator_t& loc,
-	pg_t &pg) const
+int OSDMap::object_locator_to_pg(const object_t& oid, const object_locator_t& loc, pg_t &pg) const
 {
   // calculate ps (placement seed)
   const pg_pool_t *pool = get_pg_pool(loc.get_pool());
   if (!pool)
+  {
     return -ENOENT;
-  ps_t ps;
-  if (loc.hash >= 0) {
-    ps = loc.hash;
-  } else {
-    if (!loc.key.empty())
-      ps = pool->hash_key(loc.key, loc.nspace);
-    else
-      ps = pool->hash_key(oid.name, loc.nspace);
   }
+
+  ps_t ps;
+  if (loc.hash >= 0)
+  {
+    ps = loc.hash;
+  }
+  else
+  {
+    if (!loc.key.empty())
+    {
+      ps = pool->hash_key(loc.key, loc.nspace);
+    }
+    else
+    {
+      ps = pool->hash_key(oid.name, loc.nspace);
+    }
+  }
+
   pg = pg_t(ps, loc.get_pool(), -1);
   return 0;
 }

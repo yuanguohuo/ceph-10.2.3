@@ -311,24 +311,30 @@ struct old_pg_t {
 WRITE_CLASS_ENCODER(old_pg_t)
 
 // placement group id
-struct pg_t {
+struct pg_t
+{
   uint64_t m_pool;
   uint32_t m_seed;
   int32_t m_preferred;
 
-  pg_t() : m_pool(0), m_seed(0), m_preferred(-1) {}
-  pg_t(ps_t seed, uint64_t pool, int pref=-1) :
-    m_pool(pool), m_seed(seed), m_preferred(pref) {}
-  // cppcheck-suppress noExplicitConstructor
-  pg_t(const ceph_pg& cpg) :
-    m_pool(cpg.pool), m_seed(cpg.ps), m_preferred((__s16)cpg.preferred) {}
+  pg_t() : m_pool(0), m_seed(0), m_preferred(-1)
+  {}
+
+  pg_t(ps_t seed, uint64_t pool, int pref=-1) : m_pool(pool), m_seed(seed), m_preferred(pref)
+  {}
 
   // cppcheck-suppress noExplicitConstructor
-  pg_t(const old_pg_t& opg) {
+  pg_t(const ceph_pg& cpg) : m_pool(cpg.pool), m_seed(cpg.ps), m_preferred((__s16)cpg.preferred)
+  {}
+
+  // cppcheck-suppress noExplicitConstructor
+  pg_t(const old_pg_t& opg)
+  {
     *this = opg.v;
   }
 
-  old_pg_t get_old_pg() const {
+  old_pg_t get_old_pg() const
+  {
     old_pg_t o;
     assert(m_pool < 0xffffffffull);
     o.v.pool = m_pool;
@@ -337,26 +343,36 @@ struct pg_t {
     return o;
   }
 
-  ps_t ps() const {
+  ps_t ps() const
+  {
     return m_seed;
   }
-  uint64_t pool() const {
+
+  uint64_t pool() const
+  {
     return m_pool;
   }
-  int32_t preferred() const {
+
+  int32_t preferred() const
+  {
     return m_preferred;
   }
 
   static const uint8_t calc_name_buf_size = 36;  // max length for max values len("18446744073709551615.ffffffff") + future suffix len("_head") + '\0'
   char *calc_name(char *buf, const char *suffix_backwords) const;
 
-  void set_ps(ps_t p) {
+  void set_ps(ps_t p)
+  {
     m_seed = p;
   }
-  void set_pool(uint64_t p) {
+
+  void set_pool(uint64_t p)
+  {
     m_pool = p;
   }
-  void set_preferred(int32_t osd) {
+
+  void set_preferred(int32_t osd)
+  {
     m_preferred = osd;
   }
 
@@ -374,32 +390,39 @@ struct pg_t {
    */
   unsigned get_split_bits(unsigned pg_num) const;
 
-  bool contains(int bits, const ghobject_t& oid) {
+  bool contains(int bits, const ghobject_t& oid)
+  {
     return oid.match(bits, ps());
   }
 
   hobject_t get_hobj_start() const;
   hobject_t get_hobj_end(unsigned pg_num) const;
 
-  void encode(bufferlist& bl) const {
+  void encode(bufferlist& bl) const
+  {
     __u8 v = 1;
     ::encode(v, bl);
     ::encode(m_pool, bl);
     ::encode(m_seed, bl);
     ::encode(m_preferred, bl);
   }
-  void decode(bufferlist::iterator& bl) {
+
+  void decode(bufferlist::iterator& bl)
+  {
     __u8 v;
     ::decode(v, bl);
     ::decode(m_pool, bl);
     ::decode(m_seed, bl);
     ::decode(m_preferred, bl);
   }
-  void decode_old(bufferlist::iterator& bl) {
+
+  void decode_old(bufferlist::iterator& bl)
+  {
     old_pg_t opg;
     ::decode(opg, bl);
     *this = opg;
   }
+
   void dump(Formatter *f) const;
   static void generate_test_instances(list<pg_t*>& o);
 };

@@ -2150,22 +2150,27 @@ void Objecter::_op_submit_with_budget(Op *op, shunique_lock& sul,
 
   // throttle.  before we look at any state, because
   // _take_op_budget() may drop our lock while it blocks.
-  if (!op->ctx_budgeted || (ctx_budget && (*ctx_budget == -1))) {
+  if (!op->ctx_budgeted || (ctx_budget && (*ctx_budget == -1)))
+  {
     int op_budget = _take_op_budget(op, sul);
     // take and pass out the budget for the first OP
     // in the context session
-    if (ctx_budget && (*ctx_budget == -1)) {
+    if (ctx_budget && (*ctx_budget == -1))
+    {
       *ctx_budget = op_budget;
     }
   }
 
-  if (osd_timeout > timespan(0)) {
+  if (osd_timeout > timespan(0))
+  {
     if (op->tid == 0)
       op->tid = last_tid.inc();
+
     auto tid = op->tid;
-    op->ontimeout = timer.add_event(osd_timeout,
-				    [this, tid]() {
-				      op_cancel(tid, -ETIMEDOUT); });
+    op->ontimeout = timer.add_event(osd_timeout, [this, tid]()
+        {
+            op_cancel(tid, -ETIMEDOUT); 
+        });
   }
 
   _op_submit(op, sul, ptid);
@@ -2260,23 +2265,25 @@ void Objecter::_op_submit(Op *op, shunique_lock& sul, ceph_tid_t *ptid)
   assert(op->session == NULL);
   OSDSession *s = NULL;
 
-  bool const check_for_latest_map = _calc_target(&op->target,
-						 &op->last_force_resend)
-    == RECALC_OP_TARGET_POOL_DNE;
+  bool const check_for_latest_map = _calc_target(&op->target, &op->last_force_resend) == RECALC_OP_TARGET_POOL_DNE;
 
   // Try to get a session, including a retry if we need to take write lock
   int r = _get_session(op->target.osd, &s, sul);
-  if (r == -EAGAIN) {
+
+  if (r == -EAGAIN)
+  {
     assert(s == NULL);
     sul.unlock();
     sul.lock();
     r = _get_session(op->target.osd, &s, sul);
   }
+
   assert(r == 0);
   assert(s);  // may be homeless
 
   // We may need to take wlock if we will need to _set_op_map_check later.
-  if (check_for_latest_map && sul.owns_lock_shared()) {
+  if (check_for_latest_map && sul.owns_lock_shared())
+  {
     sul.unlock();
     sul.lock();
   }
@@ -2289,41 +2296,49 @@ void Objecter::_op_submit(Op *op, shunique_lock& sul, ceph_tid_t *ptid)
 
   bool need_send = false;
 
-  if ((op->target.flags & CEPH_OSD_FLAG_WRITE) &&
-      osdmap->test_flag(CEPH_OSDMAP_PAUSEWR)) {
-    ldout(cct, 10) << " paused modify " << op << " tid " << op->tid
-		   << dendl;
+  if ((op->target.flags & CEPH_OSD_FLAG_WRITE) && osdmap->test_flag(CEPH_OSDMAP_PAUSEWR))
+  {
+    ldout(cct, 10) << " paused modify " << op << " tid " << op->tid << dendl;
     op->target.paused = true;
     _maybe_request_map();
-  } else if ((op->target.flags & CEPH_OSD_FLAG_READ) &&
-	     osdmap->test_flag(CEPH_OSDMAP_PAUSERD)) {
-    ldout(cct, 10) << " paused read " << op << " tid " << op->tid
-		   << dendl;
+  }
+  else if ((op->target.flags & CEPH_OSD_FLAG_READ) && osdmap->test_flag(CEPH_OSDMAP_PAUSERD))
+  {
+    ldout(cct, 10) << " paused read " << op << " tid " << op->tid << dendl;
     op->target.paused = true;
     _maybe_request_map();
-  } else if ((op->target.flags & CEPH_OSD_FLAG_WRITE) &&
-	     !(op->target.flags & (CEPH_OSD_FLAG_FULL_TRY |
-				   CEPH_OSD_FLAG_FULL_FORCE)) &&
-	     (_osdmap_full_flag() ||
-	      _osdmap_pool_full(op->target.base_oloc.pool))) {
-    ldout(cct, 0) << " FULL, paused modify " << op << " tid "
-		  << op->tid << dendl;
+  }
+  else if ((op->target.flags & CEPH_OSD_FLAG_WRITE) &&   //Yuanguo: have op write op
+	     !(op->target.flags & (CEPH_OSD_FLAG_FULL_TRY | CEPH_OSD_FLAG_FULL_FORCE)) &&  //Yuanguo: no CEPH_OSD_FLAG_FULL_TRY or CEPH_OSD_FLAG_FULL_FORCE 
+	     (_osdmap_full_flag() || _osdmap_pool_full(op->target.base_oloc.pool)))  //Yuanguo: full
+  {
+    ldout(cct, 0) << " FULL, paused modify " << op << " tid " << op->tid << dendl;
     op->target.paused = true;
     _maybe_request_map();
-  } else if (!s->is_homeless()) {
+  }
+  else if (!s->is_homeless())
+  {
+    ldout(cct, 99) << "YuanguoDbg: Objecter::_op_submit, need send!" << dendl;
     need_send = true;
-  } else {
+  }
+  else
+  {
+    ldout(cct, 99) << "YuanguoDbg: Objecter::_op_submit, homeless" << dendl;
     _maybe_request_map();
   }
 
   MOSDOp *m = NULL;
-  if (need_send) {
+  if (need_send)
+  {
     m = _prepare_osd_op(op);
   }
 
   OSDSession::unique_lock sl(s->lock);
+
   if (op->tid == 0)
+  {
     op->tid = last_tid.inc();
+  }
 
   ldout(cct, 10) << "_op_submit oid " << op->target.base_oid
 		 << " '" << op->target.base_oloc << "' '"
@@ -2333,16 +2348,19 @@ void Objecter::_op_submit(Op *op, shunique_lock& sul, ceph_tid_t *ptid)
 
   _session_op_assign(s, op);
 
-  if (need_send) {
+  if (need_send)
+  {
     _send_op(op, m);
   }
 
   // Last chance to touch Op here, after giving up session lock it can
   // be freed at any time by response handler.
   ceph_tid_t tid = op->tid;
-  if (check_for_latest_map) {
+  if (check_for_latest_map)
+  {
     _send_op_map_check(op);
   }
+
   if (ptid)
     *ptid = tid;
   op = NULL;
@@ -2350,8 +2368,7 @@ void Objecter::_op_submit(Op *op, shunique_lock& sul, ceph_tid_t *ptid)
   sl.unlock();
   put_session(s);
 
-  ldout(cct, 5) << num_unacked.read() << " unacked, " << num_uncommitted.read()
-		<< " uncommitted" << dendl;
+  ldout(cct, 5) << num_unacked.read() << " unacked, " << num_uncommitted.read()	<< " uncommitted" << dendl;
 }
 
 int Objecter::op_cancel(OSDSession *s, ceph_tid_t tid, int r)
@@ -2630,108 +2647,166 @@ int Objecter::_calc_target(op_target_t *t, epoch_t *last_force_resend,
   bool is_read = t->flags & CEPH_OSD_FLAG_READ;
   bool is_write = t->flags & CEPH_OSD_FLAG_WRITE;
 
+  ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, is_read=" << is_read << " is_write=" << is_write << dendl;
+
   const pg_pool_t *pi = osdmap->get_pg_pool(t->base_oloc.pool);
-  if (!pi) {
+  if (!pi)
+  {
     t->osd = -1;
     return RECALC_OP_TARGET_POOL_DNE;
   }
 
   bool force_resend = false;
   bool need_check_tiering = false;
-  if (osdmap->get_epoch() == pi->last_force_op_resend) {
-    if (last_force_resend && *last_force_resend < pi->last_force_op_resend) {
+
+  ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, osdmap_epoch:" << osdmap->get_epoch() << " last_force_op_resend:" << pi->last_force_op_resend << dendl;
+
+  if (osdmap->get_epoch() == pi->last_force_op_resend)
+  {
+    if (last_force_resend && *last_force_resend < pi->last_force_op_resend)
+    {
       *last_force_resend = pi->last_force_op_resend;
       force_resend = true;
-    } else if (last_force_resend == 0)
+
+      ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, set last_force_resend=" << (*last_force_resend) << dendl;
+    }
+    else if(last_force_resend == 0)
+    {
+      ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, no last_force_resend" << dendl;
       force_resend = true;
+    }
   }
-  if (t->target_oid.name.empty() || force_resend) {
+
+  if (t->target_oid.name.empty() || force_resend)
+  {
     t->target_oid = t->base_oid;
     need_check_tiering = true;
+    ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, target_oid=" << t->target_oid << dendl;
   }
-  if (t->target_oloc.empty() || force_resend) {
+
+  if (t->target_oloc.empty() || force_resend)
+  {
     t->target_oloc = t->base_oloc;
     need_check_tiering = true;
+    ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, target_oloc=" << t->target_oloc << dendl;
   }
 
   if (need_check_tiering &&
-      (t->flags & CEPH_OSD_FLAG_IGNORE_OVERLAY) == 0) {
+      (t->flags & CEPH_OSD_FLAG_IGNORE_OVERLAY) == 0)
+  {
+    ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, check tiering" << dendl;
+
     if (is_read && pi->has_read_tier())
+    {
       t->target_oloc.pool = pi->read_tier;
+      ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, has read tier pool:" << t->target_oloc.pool << dendl;
+    }
     if (is_write && pi->has_write_tier())
+    {
       t->target_oloc.pool = pi->write_tier;
+      ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, has write tier pool:" << t->target_oloc.pool << dendl;
+    }
   }
 
+  ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, target_oid=" << t->target_oid << " target_oloc=" << t->target_oloc.pool << dendl;
+
+
   pg_t pgid;
-  if (t->precalc_pgid) {
+  if (t->precalc_pgid)  //Yuanguo: for listing op, we set this?
+  {
     assert(t->base_oid.name.empty()); // make sure this is a listing op
-    ldout(cct, 10) << __func__ << " have " << t->base_pgid << " pool "
-		   << osdmap->have_pg_pool(t->base_pgid.pool()) << dendl;
-    if (!osdmap->have_pg_pool(t->base_pgid.pool())) {
+    ldout(cct, 10) << __func__ << " have " << t->base_pgid << " pool " << osdmap->have_pg_pool(t->base_pgid.pool()) << dendl;
+
+    if (!osdmap->have_pg_pool(t->base_pgid.pool()))
+    {
       t->osd = -1;
       return RECALC_OP_TARGET_POOL_DNE;
     }
-    if (osdmap->test_flag(CEPH_OSDMAP_SORTBITWISE)) {
+
+    if (osdmap->test_flag(CEPH_OSDMAP_SORTBITWISE))
+    {
       // if the SORTBITWISE flag is set, we know all OSDs are running
       // jewel+.
       pgid = t->base_pgid;
-    } else {
+      ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, listing op, SORTBITWISE set, pgid=" << pgid << dendl;
+    }
+    else
+    {
       // legacy behavior.  pre-jewel OSDs will fail if we send a
       // full-hash pgid value.
       pgid = osdmap->raw_pg_to_pg(t->base_pgid);
+      ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, listing op, SORTBITWISE NOT set, pgid=" << pgid << dendl;
     }
-  } else {
-    int ret = osdmap->object_locator_to_pg(t->target_oid, t->target_oloc,
-					   pgid);
-    if (ret == -ENOENT) {
+  }
+  else
+  {
+    int ret = osdmap->object_locator_to_pg(t->target_oid, t->target_oloc, pgid);
+    ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, non listing op, pgid=" << pgid << dendl;
+
+    if (ret == -ENOENT)
+    {
       t->osd = -1;
       return RECALC_OP_TARGET_POOL_DNE;
     }
   }
+
+
+  ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, pgid=" << pgid << dendl;
 
   int size = pi->size;
   int min_size = pi->min_size;
   unsigned pg_num = pi->get_pg_num();
+
   int up_primary, acting_primary;
   vector<int> up, acting;
-  osdmap->pg_to_up_acting_osds(pgid, &up, &up_primary,
-			       &acting, &acting_primary);
+
+  osdmap->pg_to_up_acting_osds(pgid, &up, &up_primary, &acting, &acting_primary);
+
+  ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, up=" << up << " up_primary=" << up_primary << " acting=" << acting << " acting_primary=" << acting_primary << dendl;
+
   bool sort_bitwise = osdmap->test_flag(CEPH_OSDMAP_SORTBITWISE);
   unsigned prev_seed = ceph_stable_mod(pgid.ps(), t->pg_num, t->pg_num_mask);
-  if (any_change && pg_interval_t::is_new_interval(
-	t->acting_primary,
-	acting_primary,
-	t->acting,
-	acting,
-	t->up_primary,
-	up_primary,
-	t->up,
-	up,
-	t->size,
-	size,
-	t->min_size,
-	min_size,
-	t->pg_num,
-	pg_num,
-	t->sort_bitwise,
-	sort_bitwise,
-	pg_t(prev_seed, pgid.pool(), pgid.preferred()))) {
+
+  if (any_change && 
+      pg_interval_t::is_new_interval(
+        	t->acting_primary,
+        	acting_primary,
+        	t->acting,
+        	acting,
+        	t->up_primary,
+        	up_primary,
+        	t->up,
+        	up,
+        	t->size,
+        	size,
+        	t->min_size,
+        	min_size,
+        	t->pg_num,
+        	pg_num,
+        	t->sort_bitwise,
+        	sort_bitwise,
+        	pg_t(prev_seed, pgid.pool(), pgid.preferred())))
+  {
     force_resend = true;
   }
 
   bool need_resend = false;
 
   bool paused = target_should_be_paused(t);
-  if (!paused && paused != t->paused) {
+
+  if (!paused && paused != t->paused)
+  {
     t->paused = false;
     need_resend = true;
   }
 
+
+  ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, pgid=" << pgid << " t->pgid=" << t->pgid << " force_resend=" << force_resend << dendl;
+
   if (t->pgid != pgid ||
-      is_pg_changed(
-	t->acting_primary, t->acting, acting_primary, acting,
-	t->used_replica || any_change) ||
-      force_resend) {
+      is_pg_changed(t->acting_primary, t->acting, acting_primary, acting, t->used_replica || any_change) ||
+      force_resend)
+  {
     t->pgid = pgid;
     t->acting = acting;
     t->acting_primary = acting_primary;
@@ -2742,55 +2817,81 @@ int Objecter::_calc_target(op_target_t *t, epoch_t *last_force_resend,
     t->pg_num = pg_num;
     t->pg_num_mask = pi->get_pg_num_mask();
     t->sort_bitwise = sort_bitwise;
-    ldout(cct, 10) << __func__ << " "
-		   << " pgid " << pgid << " acting " << acting << dendl;
+
+    ldout(cct, 10) << __func__ << " " << " pgid " << pgid << " acting " << acting << dendl;
     t->used_replica = false;
-    if (acting_primary == -1) {
+
+    if (acting_primary == -1)
+    {
+      ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, t->osd = -1" << dendl;
       t->osd = -1;
-    } else {
+    }
+    else
+    {
       int osd;
       bool read = is_read && !is_write;
-      if (read && (t->flags & CEPH_OSD_FLAG_BALANCE_READS)) {
-	int p = rand() % acting.size();
-	if (p)
-	  t->used_replica = true;
-	osd = acting[p];
-	ldout(cct, 10) << " chose random osd." << osd << " of " << acting
-		       << dendl;
-      } else if (read && (t->flags & CEPH_OSD_FLAG_LOCALIZE_READS) &&
-		 acting.size() > 1) {
-	// look for a local replica.  prefer the primary if the
-	// distance is the same.
-	int best = -1;
-	int best_locality = 0;
-	for (unsigned i = 0; i < acting.size(); ++i) {
-	  int locality = osdmap->crush->get_common_ancestor_distance(
-		 cct, acting[i], crush_location);
-	  ldout(cct, 20) << __func__ << " localize: rank " << i
-			 << " osd." << acting[i]
-			 << " locality " << locality << dendl;
-	  if (i == 0 ||
-	      (locality >= 0 && best_locality >= 0 &&
-	       locality < best_locality) ||
-	      (best_locality < 0 && locality >= 0)) {
-	    best = i;
-	    best_locality = locality;
-	    if (i)
-	      t->used_replica = true;
-	  }
-	}
-	assert(best >= 0);
-	osd = acting[best];
-      } else {
-	osd = acting_primary;
+      if (read && (t->flags & CEPH_OSD_FLAG_BALANCE_READS))
+      {
+        ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, CEPH_OSD_FLAG_BALANCE_READS is set for read" << dendl;
+
+        int p = rand() % acting.size();
+        if (p)
+        {
+          t->used_replica = true;
+        }
+        osd = acting[p];
+
+        ldout(cct, 10) << " chose random osd." << osd << " of " << acting << dendl;
+      }
+      else if (read && (t->flags & CEPH_OSD_FLAG_LOCALIZE_READS) && acting.size() > 1)
+      {
+        ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, CEPH_OSD_FLAG_LOCALIZE_READS is set for read" << dendl;
+
+        // look for a local replica.  prefer the primary if the
+        // distance is the same.
+        int best = -1;
+        int best_locality = 0;
+
+        for (unsigned i = 0; i < acting.size(); ++i)
+        {
+          int locality = osdmap->crush->get_common_ancestor_distance(cct, acting[i], crush_location);
+
+          ldout(cct, 20) << __func__ << " localize: rank " << i << " osd." << acting[i] << " locality " << locality << dendl;
+
+          if (i == 0 || 
+              (locality >= 0 && best_locality >= 0 && locality < best_locality) || 
+              (best_locality < 0 && locality >= 0))
+          {
+            best = i;
+            best_locality = locality;
+            if (i)
+            {
+              t->used_replica = true;
+            }
+          }
+        }
+
+        assert(best >= 0);
+        osd = acting[best];
+        ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, best=" << best << " osd=" << osd << dendl;
+      }
+      else
+      {
+        osd = acting_primary;
+        ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, osd = acting_primary = " << osd << dendl;
       }
       t->osd = osd;
     }
     need_resend = true;
   }
-  if (need_resend) {
+
+  ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, need_resend=" << need_resend << " t->osd=" << t->osd << dendl;
+
+  if (need_resend)
+  {
     return RECALC_OP_TARGET_NEED_RESEND;
   }
+
   return RECALC_OP_TARGET_NO_ACTION;
 }
 
@@ -2996,22 +3097,33 @@ MOSDOp *Objecter::_prepare_osd_op(Op *op)
 
   int flags = op->target.flags;
   flags |= CEPH_OSD_FLAG_KNOWN_REDIR;
+
   if (op->oncommit || op->oncommit_sync)
+  {
     flags |= CEPH_OSD_FLAG_ONDISK;
+  }
+
   if (op->onack)
+  {
     flags |= CEPH_OSD_FLAG_ACK;
+  }
 
   if (!honor_osdmap_full)
+  {
     flags |= CEPH_OSD_FLAG_FULL_FORCE;
+  }
 
   op->target.paused = false;
   op->stamp = ceph::mono_clock::now();
 
-  MOSDOp *m = new MOSDOp(client_inc.read(), op->tid,
-			 op->target.target_oid, op->target.target_oloc,
-			 op->target.pgid,
-			 osdmap->get_epoch(),
-			 flags, op->features);
+  MOSDOp *m = new MOSDOp(client_inc.read(), 
+                         op->tid,
+			                   op->target.target_oid, 
+                         op->target.target_oloc,
+			                   op->target.pgid,
+			                   osdmap->get_epoch(),
+			                   flags, 
+                         op->features);
 
   m->set_snapid(op->snapid);
   m->set_snap_seq(op->snapc.seq);
@@ -3022,19 +3134,28 @@ MOSDOp *Objecter::_prepare_osd_op(Op *op)
   m->set_retry_attempt(op->attempts++);
 
   if (op->replay_version != eversion_t())
+  {
     m->set_version(op->replay_version);  // we're replaying this op!
+  }
 
   if (op->priority)
+  {
     m->set_priority(op->priority);
+  }
   else
+  {
     m->set_priority(cct->_conf->osd_client_op_priority);
+  }
 
-  if (op->reqid != osd_reqid_t()) {
+  if (op->reqid != osd_reqid_t())
+  {
     m->set_reqid(op->reqid);
   }
 
   logger->inc(l_osdc_op_send);
   logger->inc(l_osdc_op_send_bytes, m->get_data().length());
+
+  ldout(cct, 99) << "YuanguoDbg: Objecter::_prepare_osd_op, MOSDOp = " << (*m) << dendl;
 
   return m;
 }
