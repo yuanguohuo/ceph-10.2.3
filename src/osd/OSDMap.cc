@@ -1473,6 +1473,8 @@ int OSDMap::object_locator_to_pg(const object_t& oid, const object_locator_t& lo
     return -ENOENT;
   }
 
+  ldout(cct, 99) << "YuanguoDbg: OSDMap::object_locator_to_pg, pool=" << (*pool) << dendl;
+
   ps_t ps;
   if (loc.hash >= 0)
   {
