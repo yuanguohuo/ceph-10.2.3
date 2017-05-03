@@ -1477,16 +1477,19 @@ int OSDMap::object_locator_to_pg(const object_t& oid, const object_locator_t& lo
   if (loc.hash >= 0)
   {
     ps = loc.hash;
+    ldout(cct, 99) << "YuanguoDbg: OSDMap::object_locator_to_pg, ps set by loc.hash:" << ps << dendl;
   }
   else
   {
     if (!loc.key.empty())
     {
       ps = pool->hash_key(loc.key, loc.nspace);
+      ldout(cct, 99) << "YuanguoDbg: OSDMap::object_locator_to_pg, ps calculated by loc.key:" << ps << dendl;
     }
     else
     {
       ps = pool->hash_key(oid.name, loc.nspace);
+      ldout(cct, 99) << "YuanguoDbg: OSDMap::object_locator_to_pg, ps calculated by oid.name:" << ps << dendl;
     }
   }
 

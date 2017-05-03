@@ -2308,7 +2308,7 @@ void Objecter::_op_submit(Op *op, shunique_lock& sul, ceph_tid_t *ptid)
     op->target.paused = true;
     _maybe_request_map();
   }
-  else if ((op->target.flags & CEPH_OSD_FLAG_WRITE) &&   //Yuanguo: have op write op
+  else if ((op->target.flags & CEPH_OSD_FLAG_WRITE) &&   //Yuanguo: have write op
 	     !(op->target.flags & (CEPH_OSD_FLAG_FULL_TRY | CEPH_OSD_FLAG_FULL_FORCE)) &&  //Yuanguo: no CEPH_OSD_FLAG_FULL_TRY or CEPH_OSD_FLAG_FULL_FORCE 
 	     (_osdmap_full_flag() || _osdmap_pool_full(op->target.base_oloc.pool)))  //Yuanguo: full
   {
@@ -2708,7 +2708,7 @@ int Objecter::_calc_target(op_target_t *t, epoch_t *last_force_resend,
     }
   }
 
-  ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, target_oid=" << t->target_oid << " target_oloc=" << t->target_oloc.pool << dendl;
+  ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, target_oid=" << t->target_oid << " target_oloc=" << t->target_oloc << dendl;
 
 
   pg_t pgid;
