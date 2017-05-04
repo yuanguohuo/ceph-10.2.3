@@ -2708,8 +2708,12 @@ int Objecter::_calc_target(op_target_t *t, epoch_t *last_force_resend,
     }
   }
 
-  ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, target_oid=" << t->target_oid << " target_oloc=" << t->target_oloc << dendl;
-
+  ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, base_oid=" << t->base_oid 
+                 << " target_oid=" << t->target_oid 
+                 << " base_oloc=" << t->base_oloc
+                 << " ++++++ [" << t->base_oloc.pool << "," << t->base_oloc.key << "," << t->base_oloc.nspace << "," << t->base_oloc.hash << "]"
+                 << " target_oloc=" << t->target_oloc 
+                 << " ++++++ [" << t->target_oloc.pool << "," << t->target_oloc.key << "," << t->target_oloc.nspace << "," << t->target_oloc.hash << "]" << dendl;
 
   pg_t pgid;
   if (t->precalc_pgid)  //Yuanguo: for listing op, we set this?
@@ -2740,6 +2744,20 @@ int Objecter::_calc_target(op_target_t *t, epoch_t *last_force_resend,
   }
   else
   {
+    {
+      //Yuanguo: added by yuanguo for logging
+      const pg_pool_t *pool = osdmap->get_pg_pool(t->target_oloc.get_pool());
+      if (!pool)
+      {
+        ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, poolid:" << t->target_oloc.get_pool() << " no pool" << dendl;
+      }
+      else
+      {
+        ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, poolid:" << t->target_oloc.get_pool() << " pool:" << (*pool) << dendl;
+      }
+      //Yuanguo: added by yuanguo
+    }
+
     int ret = osdmap->object_locator_to_pg(t->target_oid, t->target_oloc, pgid);
     ldout(cct, 99) << "YuanguoDbg: Objecter::_calc_target, non listing op, pgid=" << pgid << dendl;
 
