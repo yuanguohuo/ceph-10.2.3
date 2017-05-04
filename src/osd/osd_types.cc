@@ -1209,6 +1209,19 @@ int pg_pool_t::calc_bits_of(int t)
 
 void pg_pool_t::calc_pg_masks()
 {
+  //Yuanguo: 
+  //   1. if pg_num is a multiple of 2, it's binary format is 1{n-zeros}, n+1 bits
+  //          pg_num-1: n bits (that is n-ones)
+  //          calc_bits_of(pg_num-1): n
+  //          (1 << calc_bits_of(pg_num-1)): 1{n-zeros}, equals to pg_num, that's the minimul multiple of 2 that's >= pg_num;
+  //          and, pg_num_mask = pg_num - 1
+  //          e.g. pg_num=16, pg_num_mask=15
+  //   2. else, pg_num is NOT a multiple of 2, it's binary format is 1{n-bits-with-at-least-a-one}, n+1 bits
+  //          pg_num-1: n+1 bits still;
+  //          calc_bits_of(pg_num-1): n+1
+  //          (1 << calc_bits_of(pg_num-1)): 1{n+1-zeros}, that's the minimul multiple of 2 that's >= pg_num;
+  //          thus: (1 << calc_bits_of(pgp_num-1))-1: n+1 bits, all ones
+  //          e.g. pg_num=12, pg_num_mask=15
   pg_num_mask = (1 << calc_bits_of(pg_num-1)) - 1;
   pgp_num_mask = (1 << calc_bits_of(pgp_num-1)) - 1;
 }
@@ -1216,7 +1229,12 @@ void pg_pool_t::calc_pg_masks()
 unsigned pg_pool_t::get_pg_num_divisor(pg_t pgid) const
 {
   if (pg_num == pg_num_mask + 1)
+  {
+    //Yuanguo: if pg_num == pg_num_mask + 1, pg_num is a multiple of 2;
+    //   See my notes in function pg_pool_t::calc_pg_masks();
     return pg_num;                    // power-of-2 split
+  }
+
   unsigned mask = pg_num_mask >> 1;
   if ((pgid.ps() & mask) < (pg_num & mask))
     return pg_num_mask + 1;           // smaller bin size (already split)
