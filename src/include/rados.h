@@ -81,6 +81,8 @@ struct ceph_pg {
  * b <= bmask and bmask=(2**n)-1
  * e.g., b=12 -> bmask=15, b=123 -> bmask=127
  */
+//Yuanguo: b is pg_num/pgp_num, bmask is pg_num_mask/pgp_num_mask. See pg_pool_t::calc_pg_masks()
+//  See my comments at pg_pool_t::calc_pg_masks()
 static inline int ceph_stable_mod(int x, int b, int bmask)
 {
 	if ((x & bmask) < b)

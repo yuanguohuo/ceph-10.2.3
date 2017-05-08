@@ -1476,6 +1476,7 @@ int OSDMap::object_locator_to_pg(const object_t& oid, const object_locator_t& lo
   ps_t ps;
   if (loc.hash >= 0)
   {
+    //Yuanguo: if user has given a specified hash; 
     ps = loc.hash;
   }
   else

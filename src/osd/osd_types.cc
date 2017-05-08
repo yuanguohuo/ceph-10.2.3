@@ -1222,6 +1222,27 @@ void pg_pool_t::calc_pg_masks()
   //          (1 << calc_bits_of(pg_num-1)): 1{n+1-zeros}, that's the minimul multiple of 2 that's >= pg_num;
   //          thus: (1 << calc_bits_of(pgp_num-1))-1: n+1 bits, all ones
   //          e.g. pg_num=12, pg_num_mask=15
+  //
+  //  Important: in any case, it's doing the same thing: to get a number, whose number-of-bits is the same as (pg_num-1), and all
+  //      of whose bits are ones.
+  //      The pg_num_mask is used to map an object to a pg:
+  //         a. calculate "raw pg" (which contains the object hash) of the object; See  
+  //                  Objecter::_calc_target -->
+  //                  OSDMap::object_locator_to_pg 
+  //            the result is saved in pg_t pgid (it's the "raw pg", pgid.m_seed is the object hash)
+  //         b. use "raw pg" (pgid.m_seed) to map the object to a PG, the result can be saved in the same pt_t pgid (pgid.m_seed
+  //            is not the object hash any more, but is the PG id). See 
+  //                  OSD::dispatch_op_fast -->
+  //                  OSD::handle_op -->
+  //                  OSDMap::raw_pg_to_pg -->
+  //                  pg_pool_t::raw_pg_to_pg
+  //            the goal is pgid.m_seed ==> [0, pg_num-1]. the algorithm is ceph_stable_mod:
+  //                  i.    get the same number of bits from the end of pgid.m_seed (pgid.m_seed & pg_num_mask);
+  //                  ii.   if the result of i) is in [0, pg_num-1] (< pg_num), ok, done!
+  //                  iii.  if the result of i) is not in [0, pg_num-1] (>= pg_num), get one bit less!
+  //                  for example: poolid=1, pg_num = 50, then pg_num_mask = 63 = 111111b; 
+  //                        obj001,  hash (pgid.m_seed) = 0xbbf52c49, the last 6 bits is 001001b = 9 < 49,  PG is 1.9
+  //                        obj002,  hash (pgid.m_seed) = 0x4ffc4b38, the last 6 bits is 111000b = 56 > 49, then use 5 bits, 11000b = 24 = 0x18;  PG is 1.18;
   pg_num_mask = (1 << calc_bits_of(pg_num-1)) - 1;
   pgp_num_mask = (1 << calc_bits_of(pgp_num-1)) - 1;
 }
