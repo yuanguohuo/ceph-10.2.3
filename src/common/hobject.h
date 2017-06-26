@@ -320,9 +320,16 @@ public:
 };
 WRITE_CLASS_ENCODER(hobject_t)
 
-namespace std {
-  template<> struct hash<hobject_t> {
-    size_t operator()(const hobject_t &r) const {
+namespace std
+{
+  //Yuanguo: this is a specialization of template hash<T>;
+  //    it's needed for using hobject_t as key of unordered_map, e.g.
+  //    In file osd/PGLog.h:
+  //       ceph::unordered_map<hobject_t,pg_log_entry_t*> objects;
+  template<> struct hash<hobject_t>
+  {
+    size_t operator()(const hobject_t &r) const
+    {
       static hash<object_t> H;
       static rjhash<uint64_t> I;
       return H(r.oid) ^ I(r.snap);

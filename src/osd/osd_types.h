@@ -2664,7 +2664,8 @@ ostream& operator<<(ostream& out, const pg_log_entry_t& e);
  *
  *  serves as a recovery queue for recent changes.
  */
-struct pg_log_t {
+struct pg_log_t
+{
   /*
    *   head - newest entry (update|delete)
    *   tail - entry previous to oldest (update|delete) for which we have
@@ -2685,63 +2686,73 @@ struct pg_log_t {
   
   pg_log_t() {}
 
-  void clear() {
+  void clear()
+  {
     eversion_t z;
     can_rollback_to = head = tail = z;
     log.clear();
   }
 
-  bool empty() const {
+  bool empty() const
+  {
     return log.empty();
   }
 
-  bool null() const {
+  bool null() const
+  {
     return head.version == 0 && head.epoch == 0;
   }
 
-  size_t approx_size() const {
+  size_t approx_size() const
+  {
     return head.version - tail.version;
   }
 
-  list<pg_log_entry_t>::const_iterator find_entry(eversion_t v) const {
+  list<pg_log_entry_t>::const_iterator find_entry(eversion_t v) const  //Yuanguo: the same as the function below, but this is a const function;
+  {
     int fromhead = head.version - v.version;
     int fromtail = v.version - tail.version;
     list<pg_log_entry_t>::const_iterator p;
-    if (fromhead < fromtail) {
+    if (fromhead < fromtail) //Yuanguo: it's faster to search from head/end;
+    {
       p = log.end();
       --p;
       while (p->version > v)
-	--p;
+        --p;
       return p;
-    } else {
+    }
+    else  //Yuanguo: it's faster to search from tail/begin;
+    {
       p = log.begin();
       while (p->version < v)
-	++p;
+        ++p;
       return p;
     }      
   }
 
-  list<pg_log_entry_t>::iterator find_entry(eversion_t v) {
+  list<pg_log_entry_t>::iterator find_entry(eversion_t v)  //Yuanguo: the same as the function above, but this is a non-const function;
+  {
     int fromhead = head.version - v.version;
     int fromtail = v.version - tail.version;
     list<pg_log_entry_t>::iterator p;
-    if (fromhead < fromtail) {
+    if (fromhead < fromtail)
+    {
       p = log.end();
       --p;
       while (p->version > v)
-	--p;
+        --p;
       return p;
-    } else {
+    }
+    else
+    {
       p = log.begin();
       while (p->version < v)
-	++p;
+        ++p;
       return p;
     }      
   }
 
-  static void filter_log(spg_t import_pgid, const OSDMap &curmap,
-    const string &hit_set_namespace, const pg_log_t &in,
-    pg_log_t &out, pg_log_t &reject);
+  static void filter_log(spg_t import_pgid, const OSDMap &curmap, const string &hit_set_namespace, const pg_log_t &in, pg_log_t &out, pg_log_t &reject);
 
   /**
    * copy entries from the tail of another pg_log_t
@@ -2779,8 +2790,7 @@ WRITE_CLASS_ENCODER(pg_log_t)
 
 inline ostream& operator<<(ostream& out, const pg_log_t& log) 
 {
-  out << "log((" << log.tail << "," << log.head << "], crt="
-      << log.can_rollback_to << ")";
+  out << "log((" << log.tail << "," << log.head << "], crt=" << log.can_rollback_to << ")";
   return out;
 }
 
