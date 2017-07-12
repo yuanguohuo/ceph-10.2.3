@@ -26,7 +26,7 @@ cp RPMS/x86_64/python-rbd-10.2.3-0.el7.centos.x86_64.rpm        $DIR
 cp RPMS/x86_64/librados2-devel-10.2.3-0.el7.centos.x86_64.rpm   $DIR
 #cp RPMS/x86_64/ceph-debuginfo-10.2.3-0.el7.centos.x86_64.rpm    $DIR
 
-cp install.sh                                                   $DIR
+cp yuanguo_install.sh                                           $DIR
 
 tar czvf $TGZ $DIR
 rm -fr $DIR
